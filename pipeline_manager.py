@@ -1,11 +1,3 @@
-"""
-pipeline_manager.py
-
-This module contains the PipelineManager class which encapsulates the logic
-for managing transformation pipeline steps, saving and loading the pipeline
-configuration, and applying the transformations to a DataFrame.
-"""
-
 import json
 from transformations import apply_transformations_with_summary, apply_advanced_excel_transformations
 

@@ -7,7 +7,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # -----------------------------------------------------------------------------
-from PyQt6.QtWidgets import (
+from PyQt6.QtWidgets import (QAbstractItemView,QAbstractScrollArea,
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
     QTableWidget, QListWidget, QListWidgetItem, QPushButton, QLayout,QGroupBox,
   QCheckBox,QTableWidgetItem,QWidget,QSizePolicy,QAbstractItemView,QMessageBox,
@@ -27,7 +27,7 @@ class SearchableColumnListDialog(QDialog):
 
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         hlayout = QHBoxLayout()
         hlayout.addWidget(QLabel("Search:"))
         self.search_edit = QLineEdit()
@@ -37,7 +37,7 @@ class SearchableColumnListDialog(QDialog):
         layout.addLayout(hlayout)
 
         self.list_widget = QListWidget()
-        self.list_widget.setSelectionMode(QListWidget.MultiSelection if self.multi_select 
+        self.list_widget.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection if self.multi_select 
                                           else QListWidget.SingleSelection)
         layout.addWidget(self.list_widget)
         self.populateList(self.all_columns)
@@ -451,7 +451,7 @@ class RemoveDuplicatesDialog(QDialog):
 
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
 
         # Search field for filtering columns
         layout.addWidget(QLabel("Search Columns:"))
@@ -463,7 +463,7 @@ class RemoveDuplicatesDialog(QDialog):
         # Column selection list
         layout.addWidget(QLabel("Select columns to check for duplicates:"))
         self.list_widget = QListWidget()
-        self.list_widget.setSelectionMode(QListWidget.MultiSelection)
+        self.list_widget.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.populateList(self.friendly_columns)
         layout.addWidget(self.list_widget)
 
@@ -578,7 +578,7 @@ class MultiColumnRenameDialog(QDialog):
 
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         search_layout = QHBoxLayout()
         search_layout.addWidget(QLabel("Search:"))
         self.line_search = QLineEdit()
@@ -589,7 +589,7 @@ class MultiColumnRenameDialog(QDialog):
         layout.addLayout(search_layout)
 
         self.list_columns = QListWidget()
-        self.list_columns.setSelectionMode(QListWidget.MultiSelection)
+        self.list_columns.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.populateList(self.all_friendly_columns)
         layout.addWidget(self.list_columns)
 
@@ -631,7 +631,7 @@ class MultiColumnRenameDialog(QDialog):
         row = self.table.rowCount()
         self.table.insertRow(row)
         item_old = QTableWidgetItem(old_name)
-        item_old.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+        item_old.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
         self.table.setItem(row, 0, item_old)
         self.table.setItem(row, 1, QTableWidgetItem(new_name))
 
@@ -657,7 +657,7 @@ class FlagMissingDialog(QDialog):
 
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         self.table = QTableWidget()
         self.table.setColumnCount(2)
         self.table.setHorizontalHeaderLabels(["Column", "New Flag Column"])
@@ -710,11 +710,11 @@ class DropColumnsDialog(QDialog):
 
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         layout.addWidget(QLabel("Available Columns:"))
         self.available_list = QListWidget()
         self.available_list.addItems(self.available_columns)
-        self.available_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.available_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         layout.addWidget(self.available_list)
         add_button = QPushButton("Add Selected Columns to Drop")
         add_button.clicked.connect(self.addColumns)
@@ -814,10 +814,10 @@ class CaseConversionDialog(QDialog):
 
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QVBoxLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         layout.addWidget(QLabel("Select Columns for Case Conversion:"))
         self.list_columns = QListWidget()
-        self.list_columns.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.list_columns.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.list_columns.addItems(self.friendly_columns)
         layout.addWidget(self.list_columns)
 
@@ -865,7 +865,7 @@ class CaseConversionDialog(QDialog):
 
         # Column name (read-only)
         item_col = QTableWidgetItem(column_name)
-        item_col.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+        item_col.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
         self.table.setItem(row, 0, item_col)
 
         # Conversion Type Dropdown
@@ -912,12 +912,12 @@ class ReplaceSubstringDialog(QDialog):
 
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QVBoxLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
 
         # Column Selection List (friendly names)
         layout.addWidget(QLabel("Select Columns for Replace Substring:"))
         self.list_columns = QListWidget()
-        self.list_columns.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.list_columns.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.list_columns.addItems(self.friendly_columns)
         layout.addWidget(self.list_columns)
 
@@ -977,7 +977,7 @@ class ReplaceSubstringDialog(QDialog):
         self.table.insertRow(row)
         # Column Name (read-only) as friendly name
         item_col = QTableWidgetItem(column_name)
-        item_col.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+        item_col.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
         self.table.setItem(row, 0, item_col)
         # Find Substring Input
         find_edit = QLineEdit()
@@ -1050,7 +1050,7 @@ class FillMissingDialog(QDialog):
         
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         layout.addWidget(QLabel("Select Column to Fill Missing Values:"))
         self.col_combo = create_combo_box(self.friendly_columns, editable=True)
         if "column" in self.init_params:
@@ -1110,12 +1110,12 @@ class TrimDialog(QDialog):
 
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QVBoxLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
 
         # **Column Selection**
         layout.addWidget(QLabel("Select Columns:"))
         self.list_columns = QListWidget()
-        self.list_columns.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.list_columns.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.list_columns.addItems(self.friendly_columns)
         layout.addWidget(self.list_columns)
 
@@ -1130,7 +1130,7 @@ class TrimDialog(QDialog):
         self.table.setHorizontalHeaderLabels(["Column", "Operations", "Custom Characters"])
 
         # **Resize Columns to Fit Window Dynamically**
-        self.table.setSizeAdjustPolicy(QTableWidget.AdjustToContents)
+        self.table.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
         self.table.setColumnWidth(0, 200)  # Column name
         self.table.setColumnWidth(1, 300)  # Operations (slightly larger)
         self.table.setColumnWidth(2, 250)  # Custom Characters
@@ -1180,7 +1180,7 @@ class TrimDialog(QDialog):
 
         # Column Name (Read-Only)
         item_col = QTableWidgetItem(column_name)
-        item_col.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+        item_col.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
         self.table.setItem(row, 0, item_col)
 
         # **Checkable Operations Dropdown**
@@ -1253,8 +1253,8 @@ class CheckableComboBox(QComboBox):
         # Add checkable items
         for item_text in items:
             item = QListWidgetItem(item_text, self.list_widget)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)  
-            item.setCheckState(Qt.Unchecked)  
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)  
+            item.setCheckState(Qt.CheckState.Unchecked)  
 
         self.list_widget.itemClicked.connect(self.toggleCheckState)
 
@@ -1263,18 +1263,18 @@ class CheckableComboBox(QComboBox):
     def onItemPressed(self, index):
         """Manages toggling of check state on mouse press."""
         item = self.list_widget.item(index.row())
-        if item.checkState() == Qt.Checked:
-            item.setCheckState(Qt.Unchecked)
+        if item.checkState() == Qt.CheckState.Checked:
+            item.setCheckState(Qt.CheckState.Unchecked)
         else:
-            item.setCheckState(Qt.Checked)
+            item.setCheckState(Qt.CheckState.Checked)
         self.updateDisplayText()
 
     def toggleCheckState(self, item):
         """Toggle the check state of an item when clicked."""
-        if item.checkState() == Qt.Checked:
-            item.setCheckState(Qt.Unchecked)
+        if item.checkState() == Qt.CheckState.Checked:
+            item.setCheckState(Qt.CheckState.Unchecked)
         else:
-            item.setCheckState(Qt.Checked)
+            item.setCheckState(Qt.CheckState.Checked)
         self.updateDisplayText()
 
     def updateDisplayText(self):
@@ -1284,7 +1284,7 @@ class CheckableComboBox(QComboBox):
 
     def getCheckedItems(self):
         """Return checked items as a list."""
-        return [self.list_widget.item(i) for i in range(self.list_widget.count()) if self.list_widget.item(i).checkState() == Qt.Checked]
+        return [self.list_widget.item(i) for i in range(self.list_widget.count()) if self.list_widget.item(i).checkState() == Qt.CheckState.Checked]
 
     def getSelectedItems(self):
         """Return selected items as a list of strings."""
@@ -1295,6 +1295,6 @@ class CheckableComboBox(QComboBox):
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
             if item.text() in selected_items:
-                item.setCheckState(Qt.Checked)
+                item.setCheckState(Qt.CheckState.Checked)
             else:
-                item.setCheckState(Qt.Unchecked)
+                item.setCheckState(Qt.CheckState.Unchecked)

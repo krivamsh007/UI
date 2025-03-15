@@ -1,14 +1,7 @@
 import pandas as pd
 
 def merge_join_dataframes(dfs, join_type, base_key, other_keys):
-    """
-    Merges two dataframes using the specified join type.
-    - dfs: a list containing two dataframes (the first is the base file).
-    - join_type: one of "inner", "left", "right", "outer"
-    - base_key: the column name in the first (base) dataframe to join on.
-    - other_keys: a list with one element: the column name in the second dataframe.
-    Returns the merged DataFrame.
-    """
+
     if len(dfs) != 2:
         raise ValueError("Merge Join requires exactly two dataframes.")
 

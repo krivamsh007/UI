@@ -12,21 +12,24 @@ import pandas as pd
 from advanced_excel_transformations import *
 from advanced_transformations import *
 from transformations import *
-from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QLabel
-from PyQt6.QtWidgets import (
+from PyQt5.QtWebEngineWidgets import QWebEngineView
+
+from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
     QPushButton, QLabel, QTabWidget, QComboBox, QSpinBox, QLineEdit, QTableView,
     QAbstractItemView, QGroupBox, QFileDialog, QDialog, QMessageBox, QSplitter,
     QHeaderView, QProgressDialog, QStatusBar, QStackedWidget, QRadioButton,
     QPlainTextEdit, QFormLayout, QListWidget, QListWidgetItem, QLayout, QInputDialog
 )
-from lineage import show_enhanced_lineage_in_ui
+from PyQt5.QtCore import Qt
+from lineage import show_lineage_in_ui
 from ui_helpers import (PandasModel,internal_to_friendly,single_friendly_to_internal,create_config_group,)
-from ui_dialogs_data_cleaning import (DropColumnsDialog,FilterDialog,RemoveDuplicatesDialog,MultiColumnRenameDialog,FlagMissingDialog,TrimDialog,CaseConversionDialog,ReplaceSubstringDialog,)
-from ui_dialogs_data_transformation import (GenericTransformationDialog,GroupAggregateDialog,AnalyticalFunctionsDialog,GenerateUniqueIDsDialog,ConvertDatatypeDialog)
-from ui_dialogs_data_reshaping import (SplitColumnDialog,ConcatenateColumnsDialog,PivotDataDialog,UnpivotDataDialog,TransposeDataDialog)
+from ui_dialogs_data_cleaning import (DropColumnsDialog,FilterDialog,RemoveDuplicatesDialog,MultiColumnRenameDialog,FlagMissingDialog,TrimDialog,CaseConversionDialog,ReplaceSubstringDialog,
+)
+from ui_dialogs_data_transformation import (GenericTransformationDialog,GroupAggregateDialog,AnalyticalFunctionsDialog,GenerateUniqueIDsDialog,ConvertDatatypeDialog
+)
+from ui_dialogs_data_reshaping import (SplitColumnDialog,ConcatenateColumnsDialog,PivotDataDialog,UnpivotDataDialog,TransposeDataDialog
+)
 from ui_dialogs_agg_sort import SortDataDialog
 
 class ExcelAdvancedConfigDialog(QDialog):
@@ -41,7 +44,7 @@ class ExcelAdvancedConfigDialog(QDialog):
 
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SetMinimumSize)
         form_layout = QFormLayout()
         form_layout.addRow(QLabel("Select Advanced Transformation Category:"))
         self.type_combo = QComboBox()
@@ -117,7 +120,7 @@ class ExcelAdvancedConfigDialog(QDialog):
     def _browseLookupFile(self):
         dlg = QFileDialog(self, "Select Lookup File")
         dlg.setNameFilters(["CSV Files (*.csv)", "Excel Files (*.xlsx *.xls)", "All Files (*.*)"])
-        if dlg.exec():
+        if dlg.exec_():
             path = dlg.selectedFiles()[0]
             self.lookup_table_file.setText(path)
 
@@ -187,7 +190,7 @@ class ExcelAdvancedConfigDialog(QDialog):
     def _createSQLPage(self):
         page = QWidget()
         layout = QFormLayout(page)
-        from PyQt6.QtWidgets import QPlainTextEdit
+        from PyQt5.QtWidgets import QPlainTextEdit
         self.sql_query = QPlainTextEdit()
         layout.addRow("SQL Query:", self.sql_query)
         return page
@@ -278,7 +281,7 @@ class JoinDataframesDialog(QDialog):
     def browseFile(self):
         dlg = QFileDialog(self, "Select Second DF file")
         dlg.setNameFilters(["CSV Files (*.csv)", "Excel Files (*.xlsx *.xls)", "All Files (*.*)"])
-        if dlg.exec():
+        if dlg.exec_():
             path = dlg.selectedFiles()[0]
             self.file_line_edit.setText(path)
             try:
@@ -342,7 +345,7 @@ class UnionDataframesDialog(QDialog):
     def browseFile(self):
         dlg = QFileDialog(self, "Select Second DF file")
         dlg.setNameFilters(["CSV Files (*.csv)", "Excel Files (*.xlsx *.xls)", "All Files (*.*)"])
-        if dlg.exec():
+        if dlg.exec_():
             path = dlg.selectedFiles()[0]
             self.file_line_edit.setText(path)
 
@@ -386,7 +389,7 @@ class DataTransformerTool(QMainWindow):
         main_layout = QVBoxLayout(main_widget)
         main_layout.setContentsMargins(5, 5, 5, 5)
         self.setCentralWidget(main_widget)
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter = QSplitter(Qt.Horizontal)
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_container = QWidget()
@@ -406,7 +409,7 @@ class DataTransformerTool(QMainWindow):
         b_layout = QHBoxLayout(bottom_bar)
         b_layout.setContentsMargins(10, 5, 10, 5)
         footer_label = QLabel("Powered by ED&A - All transformations in one place!")
-        footer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        footer_label.setAlignment(Qt.AlignCenter)
         b_layout.addWidget(footer_label)
         main_layout.addWidget(bottom_bar)
         self.buildLeftPanel()
@@ -415,7 +418,7 @@ class DataTransformerTool(QMainWindow):
 
     def showDialog(self, dlg):
         dlg.setMinimumSize(600, 400)
-        return dlg.exec()
+        return dlg.exec_()
 
     def buildLeftPanel(self):
         file_group = create_config_group("Upload Data File", "#D6EAF8", "#2980B9")
@@ -698,10 +701,10 @@ class DataTransformerTool(QMainWindow):
         label_title.setStyleSheet("font-size: 24px; font-weight: bold;")
         self.right_layout.addWidget(label_title)
         self.table_view = QTableView()
-        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.model = PandasModel(pd.DataFrame())
         self.table_view.setModel(self.model)
-        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.right_layout.addWidget(self.table_view)
         integrated_buttons_layout = QHBoxLayout()
         download_data_btn = QPushButton("Download Data")
@@ -792,11 +795,11 @@ class DataTransformerTool(QMainWindow):
             friendly_config["Advanced Excel Functions"][func_name] = friendly_params
     
         # Generate lineage diagram
-        show_enhanced_lineage_in_ui(friendly_config, self.master_registry)
+        show_lineage_in_ui(friendly_config, self.master_registry)
     
     def updatePreview(self, df):
         self.model.setDataFrame(df)
-        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
 
     def _readFile(self, path, ext, header):
         if ext in [".csv", ".txt"]:
@@ -1045,7 +1048,7 @@ class DataTransformerTool(QMainWindow):
         dlg = GenericTransformationDialog(list(self.column_registry.values()), self.column_registry,
                                           param_defs=fields, dialog_title=f"Configure {title}")
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             params = dlg.getValues()
             if self.pipeline_loaded:
                 self.addPipelineStep(title, params)
@@ -1067,7 +1070,7 @@ class DataTransformerTool(QMainWindow):
         )
         dlg.setMinimumSize(600, 400)
     
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             # Get the user’s raw (friendly) filter structure
             raw_conditions = dlg.getFilterConditions()
             #print("Raw conditions from UI:", raw_conditions)  # Debugging
@@ -1124,7 +1127,7 @@ class DataTransformerTool(QMainWindow):
         init_params = self.state["transformation_params"].get("Remove Duplicates", {})
         dlg = RemoveDuplicatesDialog(list(self.column_registry.values()), self.column_registry, init_params, self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Remove Duplicates", dlg.getParams())
             else:
@@ -1139,7 +1142,7 @@ class DataTransformerTool(QMainWindow):
         dlg = DropColumnsDialog(list(self.master_registry.values()), self.master_registry,
                                 preselected_columns=preselected, parent=self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             selected = dlg.getSelectedColumns()
    
             if selected:
@@ -1160,7 +1163,7 @@ class DataTransformerTool(QMainWindow):
             return
         dlg = MultiColumnRenameDialog(list(self.column_registry.values()), self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             friendly_mapping = dlg.getRenameMappings()
             if friendly_mapping:
                 internal_mapping = {}
@@ -1187,7 +1190,7 @@ class DataTransformerTool(QMainWindow):
         existing = self.state["transformation_params"].get("Flag Missing Values", {}).get("columns", {})
         dlg = FlagMissingDialog(list(self.column_registry.values()), self.column_registry, existing, self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             newmap = dlg.getFlagMapping()
             if newmap:
                 if self.pipeline_loaded:
@@ -1218,7 +1221,7 @@ class DataTransformerTool(QMainWindow):
         dlg = TrimDialog(list(self.column_registry.values()), self.column_registry, converted_ui_params, self)
         dlg.setMinimumSize(600, 400)
     
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             updated_values = dlg.getValues()  # Retrieve updated user selections
     
             # **Convert friendly names back to internal names for processing**
@@ -1242,7 +1245,7 @@ class DataTransformerTool(QMainWindow):
         init_params = self.state["transformation_params"].get("Replace Substring", {})
         dlg = ReplaceSubstringDialog(list(self.column_registry.values()), self.column_registry, init_params, parent=self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Replace Substring", dlg.getValues())
             else:
@@ -1266,7 +1269,7 @@ class DataTransformerTool(QMainWindow):
         init_params = self.state["transformation_params"].get("Generate Unique IDs", {})
         dlg = GenerateUniqueIDsDialog(list(self.column_registry.values()), self.column_registry, init_params, self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Generate Unique IDs", dlg.getValues())
             else:
@@ -1292,7 +1295,7 @@ class DataTransformerTool(QMainWindow):
         init_params = self.state["transformation_params"].get("Change Case", {})
         dlg = CaseConversionDialog(list(self.column_registry.values()), self.column_registry, init_params, self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             updated_values = dlg.getValues()
             self.state["transformation_params"]["Change Case"] = updated_values
             if self.pipeline_loaded:
@@ -1307,7 +1310,7 @@ class DataTransformerTool(QMainWindow):
         init_params = self.state["transformation_params"].get("Convert Datatype", {})
         dlg = ConvertDatatypeDialog(list(self.column_registry.values()), self.column_registry, init_params, self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Convert Datatype", dlg.getValues())
             else:
@@ -1411,7 +1414,7 @@ class DataTransformerTool(QMainWindow):
         from ui_dialogs_data_cleaning import FillMissingDialog
         dlg = FillMissingDialog(list(self.column_registry.values()), self.column_registry, init_params, self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Fill Missing Values", dlg.getValues())
             else:
@@ -1455,7 +1458,7 @@ class DataTransformerTool(QMainWindow):
             return
         dlg = SplitColumnDialog(list(self.column_registry.values()), self.column_registry, self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Split Column", dlg.getValues())
             else:
@@ -1468,7 +1471,7 @@ class DataTransformerTool(QMainWindow):
             return
         dlg = ConcatenateColumnsDialog(list(self.column_registry.values()), self.column_registry, self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Concatenate Columns", dlg.getValues())
             else:
@@ -1481,7 +1484,7 @@ class DataTransformerTool(QMainWindow):
             return
         dlg = PivotDataDialog(list(self.column_registry.values()), self.column_registry, self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Pivot Data", dlg.getValues())
             else:
@@ -1495,7 +1498,7 @@ class DataTransformerTool(QMainWindow):
         from ui_dialogs_data_reshaping import UnpivotDataDialog
         dlg = UnpivotDataDialog(list(self.column_registry.values()), self.column_registry, self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Unpivot Data", dlg.getValues())
             else:
@@ -1508,7 +1511,7 @@ class DataTransformerTool(QMainWindow):
             return
         dlg = TransposeDataDialog(self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Transpose Data", dlg.getValues())
             else:
@@ -1521,7 +1524,7 @@ class DataTransformerTool(QMainWindow):
             return
         dlg = GroupAggregateDialog(list(self.column_registry.values()), self.column_registry, self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Group & Aggregate", dlg.getValues())
             else:
@@ -1534,7 +1537,7 @@ class DataTransformerTool(QMainWindow):
             return
         dlg = SortDataDialog(list(self.column_registry.values()), self.column_registry, self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Sort Data", dlg.getValues())
             else:
@@ -1547,7 +1550,7 @@ class DataTransformerTool(QMainWindow):
             return
         dlg = JoinDataframesDialog(list(self.master_registry.values()), self.master_registry, self)
         dlg.setMinimumSize(400, 300)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Join Dataframes", dlg.getValues())
             else:
@@ -1560,7 +1563,7 @@ class DataTransformerTool(QMainWindow):
             return
         dlg = UnionDataframesDialog(self)
         dlg.setMinimumSize(600, 200)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Union Dataframes", dlg.getValues())
             else:
@@ -1573,7 +1576,7 @@ class DataTransformerTool(QMainWindow):
             return
         dlg = AnalyticalFunctionsDialog(list(self.column_registry.values()), self.column_registry, self.state["transformation_params"].get("Analytical Functions", {}), self)
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             if self.pipeline_loaded:
                 self.addPipelineStep("Analytical Functions", dlg.getValues())
             else:
@@ -1687,7 +1690,7 @@ class DataTransformerTool(QMainWindow):
         dlg = GenericTransformationDialog(list(self.column_registry.values()), self.column_registry,
                                           param_defs=fields, dialog_title=f"Configure {title}")
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             params = dlg.getValues()
             if self.pipeline_loaded:
                 self.addPipelineStep(title, params)
@@ -1703,7 +1706,7 @@ class DataTransformerTool(QMainWindow):
             "Excel Files (*.xlsx *.xls)",
             "All Files (*.*)"
         ])
-        if dlg.exec():
+        if dlg.exec_():
             path = dlg.selectedFiles()[0]
             if not path:
                 return
@@ -1838,7 +1841,7 @@ class DataTransformerTool(QMainWindow):
         dlg = GenericTransformationDialog(list(self.column_registry.values()), self.column_registry,
                                           param_defs=fields, dialog_title=f"Configure {title}")
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             params = dlg.getValues()
             if self.pipeline_loaded:
                 self.addPipelineStep(title, params)
@@ -1953,7 +1956,7 @@ class DataTransformerTool(QMainWindow):
         dlg = GenericTransformationDialog(list(self.column_registry.values()), self.column_registry,
                                           param_defs=fields, dialog_title=f"Configure {title}")
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             params = dlg.getValues()
             if self.pipeline_loaded:
                 self.addPipelineStep(title, params)
@@ -2039,7 +2042,7 @@ class DataTransformerTool(QMainWindow):
         close_btn.clicked.connect(dlg.close)
         layout.addWidget(close_btn)
         dlg.setLayout(layout)
-        dlg.exec()
+        dlg.exec_()
 
     def applyAllTransformationsAndRefresh(self):
         if self.state["original_df"] is None:
@@ -2134,7 +2137,7 @@ class DataTransformerTool(QMainWindow):
         dlg = GenericTransformationDialog(list(self.column_registry.values()), self.column_registry,
                                           param_defs=fields, dialog_title=f"Configure {title}")
         dlg.setMinimumSize(600, 400)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec_() == QDialog.Accepted:
             params = dlg.getValues()
             if self.pipeline_loaded:
                 self.addPipelineStep(title, params)
@@ -2146,4 +2149,4 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = DataTransformerTool()
     window.show()
-    sys.exit(app.exec())
+    sys.exit(app.exec_())
