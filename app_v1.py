@@ -20,13 +20,13 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QTabWidget, QComboBox, QSpinBox, QLineEdit, QTableView,
     QAbstractItemView, QGroupBox, QFileDialog, QDialog, QMessageBox, QSplitter,
     QHeaderView, QProgressDialog, QStatusBar, QStackedWidget, QRadioButton,
-    QPlainTextEdit, QFormLayout, QListWidget, QListWidgetItem, QLayout, QInputDialog
+    QPlainTextEdit, QFormLayout, QListWidget, QListWidgetItem, QLayout, QInputDialog,QDialogButtonBox
 )
 from lineage import show_enhanced_lineage_in_ui
-from ui_helpers import (PandasModel,internal_to_friendly,single_friendly_to_internal,create_config_group,)
-from ui_dialogs_data_cleaning import (DropColumnsDialog,FilterDialog,RemoveDuplicatesDialog,MultiColumnRenameDialog,FlagMissingDialog,TrimDialog,CaseConversionDialog,ReplaceSubstringDialog,)
-from ui_dialogs_data_transformation import (GenericTransformationDialog,GroupAggregateDialog,AnalyticalFunctionsDialog,GenerateUniqueIDsDialog,ConvertDatatypeDialog)
-from ui_dialogs_data_reshaping import (SplitColumnDialog,ConcatenateColumnsDialog,PivotDataDialog,UnpivotDataDialog,TransposeDataDialog)
+from ui_helpers import *
+from ui_dialogs_data_cleaning import *
+from ui_dialogs_data_transformation import *
+from ui_dialogs_data_reshaping import *
 from ui_dialogs_agg_sort import SortDataDialog
 
 class ExcelAdvancedConfigDialog(QDialog):
@@ -420,7 +420,8 @@ class DataTransformerTool(QMainWindow):
     def buildLeftPanel(self):
         file_group = create_config_group("Upload Data File", "#D6EAF8", "#2980B9")
         fg_layout = QVBoxLayout(file_group)
-        upload_btn = QPushButton("Upload CSV/TXT/Excel")
+        upload_btn = QPushButton("Upload File")
+        upload_btn.setToolTip("Upload a data file in CSV, TXT, Excel, Parquet, JSON, or XML format.")
         upload_btn.clicked.connect(self.loadDataFile)
         fg_layout.addWidget(upload_btn)
         header_group = create_config_group("Header Selection", "#D5F5E3", "#27AE60")
@@ -428,20 +429,25 @@ class DataTransformerTool(QMainWindow):
         hg_layout.addWidget(QLabel("Header Row:"))
         self.spin_header = QSpinBox()
         self.spin_header.setRange(0, 50)
+        self.spin_header.setToolTip("Select the row number to use as the header (0 for no header).")
         hg_layout.addWidget(self.spin_header)
         set_header_btn = QPushButton("Set Header")
+        set_header_btn.setToolTip("Set the selected row as the header.")
         set_header_btn.clicked.connect(self.onSetHeaderClicked)
         hg_layout.addWidget(set_header_btn)
         revert_group = create_config_group("Revert Transformations", "#FCF3CF", "#F1C40F")
         rg_layout = QVBoxLayout(revert_group)
         revert_btn = QPushButton("Revert All")
+        revert_btn.setToolTip("Revert all transformations and return to the original dataset.")
         revert_btn.clicked.connect(self.revertTransformations)
         rg_layout.addWidget(revert_btn)
         pipeline_group = create_config_group("Pipeline Management", "#E8DAEF", "#8E44AD")
         pg_layout = QVBoxLayout(pipeline_group)
         save_p_btn = QPushButton("Save Pipeline")
+        save_p_btn.setToolTip("Save the current transformation pipeline to a file.")
         save_p_btn.clicked.connect(self.savePipeline)
         load_p_btn = QPushButton("Load Pipeline")
+        load_p_btn.setToolTip("Load a transformation pipeline from a file.")
         load_p_btn.clicked.connect(self.loadPipeline)
         pg_layout.addWidget(save_p_btn)
         pg_layout.addWidget(load_p_btn)
@@ -516,18 +522,7 @@ class DataTransformerTool(QMainWindow):
             ("Running Total ➕", self.configureRunningTotal),
             ("Moving Average 📉", self.configureMovingAverage),
             ("Conditional Column Creation ❓", self.configureConditionalColumnCreation),
-            ("Custom Function ⚙️", self.configureCustomFunction),
-            # New transformation functions:
-            ("Unique", self.configureUnique),
-            ("Sort Array", self.configureSortArray),
-            ("NPV", self.configureNPV),
-            ("IRR", self.configureIRR),
-            ("PMT", self.configurePMT),
-            ("IF", self.configureIF),
-            ("IFERROR", self.configureIFERROR),
-            ("XLOOKUP", self.configureXLOOKUP),
-            ("INDEX/MATCH", self.configureIndexMatch),
-            ("TEXTJOIN", self.configureTEXTJOIN)
+            ("Custom Function ⚙️", self.configureCustomFunction)
         ]
         for title, slot in mapping:
             gbox = QGroupBox(title)
@@ -540,66 +535,61 @@ class DataTransformerTool(QMainWindow):
 
     def buildExcelFunctionsTab(self, parent_widget):
         layout = QVBoxLayout(parent_widget)
-        text_group = create_config_group("Text Functions", "#FADBD8", "#E74C3C")
-        tg_layout = QVBoxLayout(text_group)
+        
+        # Lookup & Reference Group
+        lookup_group = create_config_group("Lookup & Reference", "#E8DAEF", "#8E44AD")
+        up_layout = QVBoxLayout(lookup_group)
         for title, slot in [
-            ("LEFT", self.configureLeft),
-            ("RIGHT", self.configureRight),
-            ("MID", self.configureMid),
-            ("LEN", self.configureLen),
-            ("TEXTJOIN", self.configureTEXTJOIN),
-            ("Replace Substring", self.configureReplaceSubstring),
-            ("Change Case", self.configureCaseConversion)
+            ("VLOOKUP", self.configureVLOOKUP),
+            ("XLOOKUP", self.configureXLOOKUP),
+            ("INDEX/MATCH", self.configureIndexMatch),
+            ("HLOOKUP", self.configureHLOOKUP)
         ]:
             btn = QPushButton(f"Configure {title}")
             btn.clicked.connect(slot)
-            tg_layout.addWidget(btn)
-        layout.addWidget(text_group)
-        date_group = create_config_group("Date & Time Functions", "#D5F5E8", "#3498DB")
-        dg_layout = QVBoxLayout(date_group)
-        for title, slot in [
-            ("DATEDIF", self.configureDatedif),
-            ("EOMONTH", self.configureEOMONTH),
-            ("WEEKDAY", self.configureWeekday),
-            ("Standardize Date Format", self.configureStandardizeDateFormat),
-            ("Date Shift", self.configureDateShift),
-            ("Next Working Day", self.configureNextWorkingDay)
-        ]:
-            btn = QPushButton(f"Configure {title}")
-            btn.clicked.connect(slot)
-            dg_layout.addWidget(btn)
-        layout.addWidget(date_group)
-        fin_group = create_config_group("Financial Functions", "#D4EFDF", "#27AE60")
+            up_layout.addWidget(btn)
+            layout.addWidget(lookup_group)
+            # Date/Time Group
+            date_group = create_config_group("Date/Time", "#D5F5E8", "#3498DB")
+            dg_layout = QVBoxLayout(date_group)
+            for title, slot in [
+                ("EDATE", self.configureEDATE),
+                ("EOMONTH", self.configureEOMONTH),
+                ("NETWORKDAYS", self.configureNETWORKDAYS),
+                ("DATEDIF", self.configureDATEDIF)
+            ]:
+                btn = QPushButton(f"Configure {title}")
+                btn.clicked.connect(slot)
+                dg_layout.addWidget(btn)
+            layout.addWidget(date_group)    
+        # Financial Functions Group
+        fin_group = create_config_group("Financial", "#D4EFDF", "#27AE60")
         fg_layout = QVBoxLayout(fin_group)
         for title, slot in [
             ("NPV", self.configureNPV),
             ("IRR", self.configureIRR),
-            ("PMT", self.configurePMT)
+            ("PMT", self.configurePMT),
+            ("FV", self.configureFV),
+            ("PV", self.configurePV)
         ]:
             btn = QPushButton(f"Configure {title}")
             btn.clicked.connect(slot)
             fg_layout.addWidget(btn)
         layout.addWidget(fin_group)
-        logic_group = create_config_group("Logical Functions", "#FDEDEC", "#E67E22")
+    
+        # Logical Functions Group
+        logic_group = create_config_group("Logical", "#FDEDEC", "#E67E22")
         lg_layout = QVBoxLayout(logic_group)
         for title, slot in [
             ("IF", self.configureIF),
-            ("IFERROR", self.configureIFERROR)
+            ("IFS", self.configureIFS),
+            ("IFERROR", self.configureIFERROR),
+            ("SWITCH", self.configureSWITCH)
         ]:
             btn = QPushButton(f"Configure {title}")
             btn.clicked.connect(slot)
             lg_layout.addWidget(btn)
         layout.addWidget(logic_group)
-        lookup_group = create_config_group("Lookup & Reference", "#E8DAEF", "#8E44AD")
-        up_layout = QVBoxLayout(lookup_group)
-        for title, slot in [
-            ("XLOOKUP", self.configureXLOOKUP),
-            ("INDEX/MATCH", self.configureIndexMatch)
-        ]:
-            btn = QPushButton(f"Configure {title}")
-            btn.clicked.connect(slot)
-            up_layout.addWidget(btn)
-        layout.addWidget(lookup_group)
         layout.addStretch()
 
     def buildReshapingTab(self, parent_widget):
@@ -721,93 +711,150 @@ class DataTransformerTool(QMainWindow):
 
     def showLineagePopout(self):
         friendly_config = {
+            "file_upload": {
             "file_name": os.path.basename(self.state["file_path"]),
-            "Header Row": self.state["header_row"],
+            "upload_timestamp": self.state.get("upload_timestamp", "Not Provided"),
+            "file_size": os.path.getsize(self.state["file_path"]),
+            "file_format": self.state["file_ext"]
+            },
+            "header_selection": {
+                "header_row": self.state["header_row"],
+                "original_columns": list(self.original_registry.values())
+            },
             "Filters": [],
             "Transformations": {},
             "Advanced Excel Functions": {}
         }
     
-        # Handle filters correctly as dictionaries
         friendly_config["Filters"] = [
             {
                 "column": internal_to_friendly(filt["column"], self.master_registry),
                 "condition": filt["condition"],
                 "value": filt["value"]
-            } for filt in self.state["filter_conditions"]
+            }
+            for filt in self.state.get("filter_conditions", [])
             if isinstance(filt, dict) and "column" in filt
         ]
-    
-        # Handle transformations
-        for trans_name, params in self.state["transformation_params"].items():
-            friendly_params = params.copy()
-    
-            if trans_name == "Remove Duplicates":
-                if "subset" in params:
-                    friendly_params["subset"] = [
-                        internal_to_friendly(col, self.master_registry) for col in params["subset"]
-                    ]
-    
-            elif trans_name == "Flag Missing Values":
-                if "columns" in params and isinstance(params["columns"], dict):
-                    friendly_params["columns"] = {
-                        internal_to_friendly(col, self.master_registry): flag_col
-                        for col, flag_col in params["columns"].items()
-                    }
-    
-            elif trans_name == "Drop Columns":
-                if "columns_to_drop" in params:
-                    friendly_params["columns_to_drop"] = [
-                        internal_to_friendly(col, self.master_registry) for col in params["columns_to_drop"]
-                    ]
-    
-            elif trans_name == "Trim":
-                if "columns" in params:
-                    friendly_params["columns"] = [
-                        internal_to_friendly(col, self.master_registry) for col in params["columns"]
-                    ]
-    
-            else:
-                if "column" in params:
-                    friendly_params["column"] = internal_to_friendly(params["column"], self.master_registry)
-                if "columns" in params:
-                    friendly_params["columns"] = [
-                        internal_to_friendly(col, self.master_registry) for col in params["columns"]
-                    ]
-    
-            friendly_config["Transformations"][trans_name] = friendly_params
-    
-        # Advanced Excel transformations
-        for func_name, params in self.state["advanced_excel_config"].items():
-            friendly_params = params.copy()
-            for param_key in ["column", "columns"]:
-                if param_key in params:
-                    if isinstance(params[param_key], list):
-                        friendly_params[param_key] = [
-                            internal_to_friendly(col, self.master_registry) for col in params[param_key]
-                        ]
+        # Helper function to convert transformation parameters.
+        def convert_tuple_keys_to_str(obj):
+        
+            if isinstance(obj, dict):
+                new_obj = {}
+                for k, v in obj.items():
+                    if isinstance(k, tuple):
+                        new_key = "::".join(str(item) for item in k)
                     else:
-                        friendly_params[param_key] = internal_to_friendly(params[param_key], self.master_registry)
-    
+                        new_key = k
+                    new_obj[new_key] = convert_tuple_keys_to_str(v)
+                return new_obj
+            elif isinstance(obj, list):
+                return [convert_tuple_keys_to_str(item) for item in obj]
+            else:
+                return obj
+        
+        def process_transformation(params):
+            friendly_params = {}
+            for key in ["column", "columns", "subset", "columns_to_drop"]:
+                if key in params:
+                    value = params[key]
+                    if isinstance(value, list):
+                        friendly_params[key] = [internal_to_friendly(col, self.master_registry) for col in value]
+                    elif isinstance(value, dict):
+                        # For dictionary values, convert each key.
+                        friendly_params[key] = {internal_to_friendly(k, self.master_registry): v for k, v in value.items()}
+                    else:
+                        friendly_params[key] = internal_to_friendly(value, self.master_registry)
+            # Copy any additional parameters that are not column references.
+            for k, v in params.items():
+                if k not in friendly_params:
+                    friendly_params[k] = v
+            return friendly_params
+
+        if self.pipeline_loaded:
+            for step in self.state.get("pipeline_steps", []):
+                trans_name = step["transformation"]
+                params = step["parameters"]
+                friendly_config["Transformations"][trans_name] = process_transformation(params)
+        else:
+            for trans_name, params in self.state.get("transformation_params", {}).items():
+                friendly_config["Transformations"][trans_name] = process_transformation(params)
+
+        for func_name, params in self.state.get("advanced_excel_config", {}).items():
+            friendly_params = params.copy()
+            for key in ["column", "columns"]:
+                if key in params:
+                    value = params[key]
+                    if isinstance(value, list):
+                        friendly_params[key] = [internal_to_friendly(col, self.master_registry) for col in value]
+                    elif isinstance(value, dict):
+                        friendly_params[key] = {internal_to_friendly(k, self.master_registry): v for k, v in value.items()}
+                    else:
+                        friendly_params[key] = internal_to_friendly(value, self.master_registry)
             friendly_config["Advanced Excel Functions"][func_name] = friendly_params
-    
-        # Generate lineage diagram
+        
+        column_rules = {}
+        for trans, params in friendly_config["Transformations"].items():
+            affected_cols = []
+            # Check keys that reference columns.
+            for key in ["column", "columns", "subset", "columns_to_drop"]:
+                if key in params:
+                    val = params[key]
+                    if isinstance(val, list):
+                        affected_cols.extend(val)
+                    elif isinstance(val, dict):
+                        # When the value is a dictionary, we consider its keys as affected columns.
+                        affected_cols.extend(val.keys())
+                    else:
+                        affected_cols.append(val)
+            # For each affected column, add the transformation rule and its details.
+            for col in affected_cols:
+                if col not in column_rules:
+                    column_rules[col] = []
+                column_rules[col].append({
+                    "rule": trans,
+                    "details": params
+                })
+        friendly_config["Column Rules"] = column_rules
+
+        if "new_names" in self.state.get("transformation_params", {}):
+            friendly_config["new_names"] = convert_tuple_keys_to_str(
+                self.state["transformation_params"].get("new_names", {})
+        )  
+        if "having" in self.state.get("transformation_params", {}):
+            friendly_config["having"] = convert_tuple_keys_to_str(
+                self.state["transformation_params"].get("having", {})
+        )   
+        print("Friendly config for lineage", friendly_config,self.master_registry)       
         show_enhanced_lineage_in_ui(friendly_config, self.master_registry)
-    
+
     def updatePreview(self, df):
         self.model.setDataFrame(df)
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
     def _readFile(self, path, ext, header):
-        if ext in [".csv", ".txt"]:
-            return pd.read_csv(path, header=header)
-        elif ext in [".xlsx", ".xls"]:
-            return pd.read_excel(path, header=header)
-        elif ext == ".parquet":
-            return pd.read_parquet(path)
-        else:
-            return pd.read_csv(path, header=header)
-
+        try:
+            if ext in [".csv", ".txt"]:
+                delimiter, ok = QInputDialog.getText(self, "Specify Delimiter", "Enter delimiter for text file:", text=",")
+                if not ok:
+                    delimiter = ","
+                return pd.read_csv(path, delimiter=delimiter, header=header)
+            elif ext in [".xlsx", ".xls"]:
+                sheet_name, ok = QInputDialog.getText(self, "Select Sheet", "Enter sheet name (leave blank for first sheet):")
+                if not ok:
+                    sheet_name = 0
+                return pd.read_excel(path, sheet_name=sheet_name, header=header)
+            elif ext == ".parquet":
+                return pd.read_parquet(path)
+            elif ext == ".json":
+                return pd.read_json(path)
+            elif ext == ".xml":
+                return pd.read_xml(path)
+            else:
+                return pd.read_csv(path, header=header)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not read file:\n{str(e)}")
+            return pd.DataFrame()
+        
     def onSetHeaderClicked(self):
         if not self.state["file_path"]:
             QMessageBox.warning(self, "No File", "Load a file first.")
@@ -828,7 +875,7 @@ class DataTransformerTool(QMainWindow):
                 new_cols.append(cid)
             df.columns = new_cols
             self.original_registry = self.master_registry.copy()
-            print("New registry", self.original_registry)
+            #print("New registry", self.original_registry)
             if self.state["filter_conditions"]:
                 for cond in self.state["filter_conditions"]:
                     if "column" in cond:
@@ -847,10 +894,10 @@ class DataTransformerTool(QMainWindow):
             self,
             "Revert All",
             "Are you sure you want to revert all transformations?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
-        if answer == QMessageBox.Yes:
+        if answer == QMessageBox.StandardButton.Yes:
             self.state["filter_conditions"] = []
             self.state["transformation_params"] = {}
             self.state["advanced_excel_config"] = {}
@@ -877,7 +924,7 @@ class DataTransformerTool(QMainWindow):
             }
         else:
             trans_config = self.state["transformation_params"].copy()
-            print("Saving transformations",trans_config)
+            #print("Saving transformations",trans_config)
             if "Rename Columns" in trans_config:
                 friendly_mapping = trans_config["Rename Columns"]
                 new_mapping = {}
@@ -887,6 +934,7 @@ class DataTransformerTool(QMainWindow):
                         internal_key = friendly_name
                     new_mapping[internal_key] = new_name
                 trans_config["Rename Columns"] = new_mapping
+            print(trans_config)
             config = {
                 "Header Row": self.state["header_row"],
                 "Filters": self.state["filter_conditions"],
@@ -898,8 +946,7 @@ class DataTransformerTool(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Save Pipeline Config", "", "JSON Files (*.json)")
         if path:
             try:
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(config, f, indent=4)
+                save_pipeline_config( config,path)
                 QMessageBox.information(self, "Success", "Pipeline saved successfully.")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error saving pipeline:\n{str(e)}")
@@ -910,9 +957,8 @@ class DataTransformerTool(QMainWindow):
             return
         path, _ = QFileDialog.getOpenFileName(self, "Load Pipeline Config", "", "JSON Files (*.json)")
         if path:
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    config = json.load(f)
+            try:  
+                config = load_pipeline_config(path)
                 # Update state with saved header row and filters.
                 self.state["header_row"] = config.get("Header Row", 0)
                 self.state["filter_conditions"] = config.get("Filters", [])
@@ -1068,13 +1114,8 @@ class DataTransformerTool(QMainWindow):
         dlg.setMinimumSize(600, 400)
     
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            # Get the user’s raw (friendly) filter structure
             raw_conditions = dlg.getFilterConditions()
-            #print("Raw conditions from UI:", raw_conditions)  # Debugging
-            # Convert friendly column names -> internal column names
             converted_conditions = self._convert_filter_conditions_to_internal(raw_conditions)
-            #print("Converted filter conditions (Internal Names):", converted_conditions)  # Debugging
-            # Store in state and re-apply transformations
             self.state["filter_conditions"] = converted_conditions
             self.applyAllTransformationsAndRefresh()
     
@@ -1205,8 +1246,7 @@ class DataTransformerTool(QMainWindow):
         if self.state["df"] is None:
             QMessageBox.warning(self, "No Data", "Please upload a file before configuring Trim Spaces.")
             return
-    
-        # **Convert internal names to friendly names for UI**
+
         init_params = self.state["transformation_params"].get("Trim", {})
         converted_ui_params = {"columns": {}}
     
@@ -1253,11 +1293,11 @@ class DataTransformerTool(QMainWindow):
         if not self.state["file_path"]:
             QMessageBox.warning(self, "No File", "Load a file first.")
             return
-        self.openSimpleDialog("Detect Outliers", [
-            {"name": "column", "label": "Column", "type": "str"},
-            {"name": "threshold", "label": "Threshold Value", "type": "int"},
-            {"name": "new_flag", "label": "New Flag Column", "type": "str"}
-        ])
+        dlg = DetectOutliersDialog(self.friendly_columns, self.master_registry)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+                config = dlg.getValues()
+                self.state["transformation_params"]["Detect Outliers"] = config
+                self.applyAllTransformationsAndRefresh()
 
     def configureGenerateUniqueIDs(self):
         if not self.state["file_path"]:
@@ -1318,13 +1358,21 @@ class DataTransformerTool(QMainWindow):
         if not self.state["file_path"]:
             QMessageBox.warning(self, "No File", "Load a file first.")
             return
-        self.openSimpleDialog("Standardize Date Format", [{"name": "date_format", "label": "Date Format (YYYY-MM-DD)", "type": "str"}])
+        dlg = DateFormatDialog(self.friendly_columns, self.master_registry)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            config = dlg.getValues()
+            self.state["transformation_params"]["Standardize Date Format"] = config
+            self.applyAllTransformationsAndRefresh()
 
     def configureNormalizeData(self):
         if not self.state["file_path"]:
             QMessageBox.warning(self, "No File", "Load a file first.")
             return
-        self.openSimpleDialog("Normalize Data", [{"name": "norm_method", "label": "Normalization Method (minmax, zscore)", "type": "str"}])
+        dlg = NormalizeDataDialog(self.friendly_columns, self.master_registry)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            config = dlg.getValues()
+            self.state["transformation_params"]["Normalize Data"] = config
+            self.applyAllTransformationsAndRefresh()
 
     def configureExtractSubstrings(self):
         if not self.state["file_path"]:
@@ -1519,7 +1567,8 @@ class DataTransformerTool(QMainWindow):
         if not self.state["file_path"]:
             QMessageBox.warning(self, "No File", "Load a file first.")
             return
-        dlg = GroupAggregateDialog(list(self.column_registry.values()), self.column_registry, self)
+        init_params = self.state["transformation_params"].get("Group & Aggregate", {})  # ensure it's a dictionary
+        dlg = GroupAggregateDialog(list(self.column_registry.values()), self.column_registry, init_params, self)
         dlg.setMinimumSize(600, 400)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             if self.pipeline_loaded:
@@ -1640,6 +1689,13 @@ class DataTransformerTool(QMainWindow):
             {"name": "column", "label": "Reference Column", "type": "str"},
             {"name": "fallback", "label": "Fallback Value", "type": "str"}
         ])
+    def configureVLOOKUP(self):
+        self.openSimpleDialog("VLOOKUP", [
+            {"name": "lookup_value", "label": "Lookup Value", "type": "str"},
+            {"name": "table_array", "label": "Table Array (JSON)", "type": "str"},
+            {"name": "col_index", "label": "Column Index", "type": "int"},
+            {"name": "range_lookup", "label": "Range Lookup (True/False)", "type": "str"}
+        ])    
     def configureXLOOKUP(self):
         self.openSimpleDialog("XLOOKUP", [
             {"name": "source_column", "label": "Source Column", "type": "str"},
@@ -1649,6 +1705,56 @@ class DataTransformerTool(QMainWindow):
             {"name": "approximate_match", "label": "Approximate Match (True/False)", "type": "str"},
             {"name": "tolerance", "label": "Tolerance (numeric)", "type": "float"}
         ])
+    def configureHLOOKUP(self):
+        self.openSimpleDialog("HLOOKUP", [
+            {"name": "lookup_value", "label": "Lookup Value", "type": "str"},
+            {"name": "table_array", "label": "Table Array (JSON)", "type": "str"},
+            {"name": "row_index", "label": "Row Index", "type": "int"},
+            {"name": "range_lookup", "label": "Range Lookup (True/False)", "type": "str"}
+        ])        
+    def configureEDATE(self):
+        self.openSimpleDialog("EDATE", [
+            {"name": "start_date", "label": "Start Date Column", "type": "str"},
+            {"name": "months", "label": "Month Offset", "type": "int"}
+        ]) 
+    def configureNETWORKDAYS(self):
+        self.openSimpleDialog("NETWORKDAYS", [
+            {"name": "start_date", "label": "Start Date Column", "type": "str"},
+            {"name": "end_date", "label": "End Date Column", "type": "str"},
+            {"name": "holidays", "label": "Holidays (Comma-separated dates)", "type": "str"}
+        ])    
+    def configureDATEDIF(self):
+        self.openSimpleDialog("DATEDIF", [
+            {"name": "start_date_column", "label": "Start Date Column", "type": "str"},
+            {"name": "end_date_column", "label": "End Date Column", "type": "str"},
+            {"name": "unit", "label": "Unit (days/months/years)", "type": "str"}
+        ])   
+    def configureFV(self):
+        self.openSimpleDialog("FV", [
+            {"name": "rate", "label": "Rate", "type": "float"},
+            {"name": "nper", "label": "Number of Periods", "type": "int"},
+            {"name": "pmt", "label": "Payment per Period", "type": "float"},
+            {"name": "pv", "label": "Present Value", "type": "float"}
+        ])     
+    def configurePV(self):
+        self.openSimpleDialog("PV", [
+            {"name": "rate", "label": "Rate", "type": "float"},
+            {"name": "nper", "label": "Number of Periods", "type": "int"},
+            {"name": "pmt", "label": "Payment per Period", "type": "float"},
+            {"name": "fv", "label": "Future Value", "type": "float"}
+        ])    
+    def configureIFS(self):
+        self.openSimpleDialog("IFS", [
+            {"name": "conditions", "label": "Conditions (comma separated)", "type": "str"},
+            {"name": "results", "label": "Results (comma separated)", "type": "str"},
+            {"name": "default_value", "label": "Default Value", "type": "str"}
+        ])    
+    def configureSWITCH(self):
+        self.openSimpleDialog("SWITCH", [
+            {"name": "expression", "label": "Expression", "type": "str"},
+            {"name": "cases", "label": "Cases (JSON: key-value pairs)", "type": "str"},
+            {"name": "default", "label": "Default Value", "type": "str"}
+        ])                                   
     def configureIndexMatch(self):
         self.openSimpleDialog("INDEX/MATCH", [
             {"name": "source_column", "label": "Source Column", "type": "str"},
@@ -1701,6 +1807,9 @@ class DataTransformerTool(QMainWindow):
             "CSV Files (*.csv)",
             "Text Files (*.txt)",
             "Excel Files (*.xlsx *.xls)",
+            "Parquet Files (*.parquet)",
+            "JSON Files (*.json)",
+            "XML Files (*.xml)",
             "All Files (*.*)"
         ])
         if dlg.exec():
@@ -1710,7 +1819,7 @@ class DataTransformerTool(QMainWindow):
             path = os.path.normpath(path)
             self.state["file_path"] = path
             file_size = os.path.getsize(path)
-            threshold = 1 * 1024 * 1024 
+            threshold = 1 * 1024 * 1024  # 1 MB
             if file_size > threshold and not path.lower().endswith('.parquet'):
                 progress = QProgressDialog("Converting large file to Parquet...", None, 0, 0, self)
                 progress.setWindowModality(Qt.WindowModal)
@@ -1720,7 +1829,45 @@ class DataTransformerTool(QMainWindow):
                 progress.close()
             self.state["file_ext"] = os.path.splitext(path)[1].lower()
             try:
-                df = self._readFile(path, self.state["file_ext"], self.spin_header.value())
+                if self.state["file_ext"] in [".csv", ".txt"]:
+                    delimiter, ok = QInputDialog.getText(self, "Specify Delimiter", "Enter delimiter for text file:", text=",")
+                    if not ok:
+                        delimiter = ","
+                    df = pd.read_csv(path, delimiter=delimiter, header=self.spin_header.value())
+                elif self.state["file_ext"] in [".xlsx", ".xls"]:
+                    # Get the list of sheets in the Excel file
+                    excel_file = pd.ExcelFile(path)
+                    sheet_names = excel_file.sheet_names
+                    
+                    # Create a dialog with a dropdown to select the sheet
+                    sheet_dialog = QDialog(self)
+                    sheet_dialog.setWindowTitle("Select Sheet")
+                    layout = QVBoxLayout(sheet_dialog)
+                    sheet_label = QLabel("Select a sheet to load:")
+                    layout.addWidget(sheet_label)
+                    sheet_combo = QComboBox()
+                    sheet_combo.addItems(sheet_names)
+                    layout.addWidget(sheet_combo)
+                    button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+                    button_box.accepted.connect(sheet_dialog.accept)
+                    button_box.rejected.connect(sheet_dialog.reject)
+                    layout.addWidget(button_box)
+                    sheet_dialog.setLayout(layout)
+                    
+                    if sheet_dialog.exec() == QDialog.DialogCode.Accepted:
+                        selected_sheet = sheet_combo.currentText()
+                        df = pd.read_excel(path, sheet_name=selected_sheet, header=self.spin_header.value())
+                    else:
+                        return  # User canceled the sheet selection
+                elif self.state["file_ext"] == ".parquet":
+                    df = pd.read_parquet(path)
+                elif self.state["file_ext"] == ".json":
+                    df = pd.read_json(path)
+                elif self.state["file_ext"] == ".xml":
+                    df = pd.read_xml(path)
+                else:
+                    df = pd.read_csv(path, header=self.spin_header.value())
+                
                 self.friendly_columns = df.columns.tolist()
                 self.master_registry.clear()
                 self.column_registry.clear()
@@ -1732,7 +1879,7 @@ class DataTransformerTool(QMainWindow):
                     new_cols.append(cid)
                 df.columns = new_cols
                 self.original_registry = self.master_registry.copy()
-                print("New registry", self.original_registry)
+                #print("New registry", self.original_registry)
                 self.state["original_df"] = df.copy()
                 if not self.state["loaded_config"]:
                     self.state["filter_conditions"] = []

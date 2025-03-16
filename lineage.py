@@ -3,16 +3,32 @@ import datetime
 from pyvis.network import Network
 from ui_helpers import internal_to_friendly
 from jinja2 import Template
-from PyQt6.QtCore import QUrl, Qt, QSize,QPoint
+from PyQt6.QtCore import QUrl, Qt, QSize, QPoint
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QToolBar, QSplitter,
-    QFrame, QTextBrowser, QToolTip, 
+    QFrame, QTextBrowser, QToolTip,
 )
-from PyQt6.QtGui import QIcon, QPixmap, QFont,QAction
+from PyQt6.QtGui import QIcon, QPixmap, QFont, QAction
+from PyQt6.QtWebEngineCore import QWebEnginePage
 
-# Define a modern HTML template with enhanced styling and interactive features
+# Define a custom QWebEnginePage that intercepts navigation requests.
+class CustomWebEnginePage(QWebEnginePage):
+    def __init__(self, parent=None, node_click_handler=None):
+        super().__init__(parent)
+        self.node_click_handler = node_click_handler
+
+    def acceptNavigationRequest(self, url: QUrl, _type, isMainFrame):
+        url_str = url.toString()
+        if url_str.startswith("detail:"):
+            if self.node_click_handler:
+                self.node_click_handler(url)
+            return False
+        return super().acceptNavigationRequest(url, _type, isMainFrame)
+
+# Define a modern HTML template with enhanced styling and interactive features.
+# A script is added at the end to listen for node clicks and redirect to a custom URL.
 modern_template = """
 <!DOCTYPE html>
 <html>
@@ -149,181 +165,36 @@ modern_template = """
         <div class="legend-color" style="background-color: #ADD8E6;"></div>
         <span>Filter Operation</span>
       </div>
-      <div class="legend-item">
-        <div class="legend-color" style="background-color: #FFA500;"></div>
-        <span>Transformation</span>
-      </div>
-      <div class="legend-item">
-        <div class="legend-color" style="background-color: #EE82EE;"></div>
-        <span>Text Manipulation</span>
-      </div>
-      <div class="legend-item">
-        <div class="legend-color" style="background-color: #008000;"></div>
-        <span>Excel Function</span>
-      </div>
-      <div class="legend-item">
-        <div class="legend-color" style="background-color: #FFFF00;"></div>
-        <span>Final Output</span>
-      </div>
     </div>
     
     <script type="text/javascript">
-      var nodes = new vis.DataSet({{nodes}});
-      var edges = new vis.DataSet({{edges}});
-      var container = document.getElementById("mynetwork");
-      var data = {nodes: nodes, edges: edges};
-      var options = {{options}};
-      var network = new vis.Network(container, data, options);
-      
-      // Show node details on click
-      network.on("click", function(params) {
-        if (params.nodes.length > 0) {
-          var nodeId = params.nodes[0];
-          var node = nodes.get(nodeId);
-          var detailsDiv = document.getElementById("nodeDetails");
-          
-          if (node.details) {
-            detailsDiv.innerHTML = node.details;
-          } else {
-            detailsDiv.innerHTML = "<h3>" + node.label + "</h3><p>No additional details available.</p>";
-          }
-        }
-      });
-      
-      // Highlight connected nodes on hover
-      network.on("hoverNode", function(params) {
-        var nodeId = params.node;
-        var connectedNodes = network.getConnectedNodes(nodeId);
-        connectedNodes.push(nodeId);
-        
-        // Highlight connected nodes
-        nodes.forEach(function(node) {
-          if (connectedNodes.indexOf(node.id) > -1) {
-            nodes.update({id: node.id, color: {opacity: 1.0}});
-          } else {
-            nodes.update({id: node.id, color: {opacity: 0.3}});
-          }
-        });
-        
-        // Highlight connected edges
-        edges.forEach(function(edge) {
-          if (connectedNodes.indexOf(edge.from) > -1 && connectedNodes.indexOf(edge.to) > -1) {
-            edges.update({id: edge.id, color: {opacity: 1.0}});
-          } else {
-            edges.update({id: edge.id, color: {opacity: 0.3}});
-          }
-        });
-      });
-      
-      // Reset highlights when not hovering
-      network.on("blurNode", function() {
-        nodes.forEach(function(node) {
-          nodes.update({id: node.id, color: {opacity: 1.0}});
-        });
-        
-        edges.forEach(function(edge) {
-          edges.update({id: edge.id, color: {opacity: 1.0}});
-        });
-      });
-      
-      // Toggle legend visibility
       function toggleLegend() {
-        var legend = document.getElementById("legend");
-        if (legend.style.display === "none") {
-          legend.style.display = "block";
-        } else {
-          legend.style.display = "none";
-        }
+          var legend = document.getElementById("legend");
+          legend.style.display = legend.style.display === "none" ? "block" : "none";
       }
-      
-      // Export network as image
-      function exportImage() {
-        var canvas = container.getElementsByTagName('canvas')[0];
-        var image = canvas.toDataURL("image/png").replace("image/png", "image/octet-stream");
-        var link = document.createElement('a');
-        link.download = 'data_lineage_' + new Date().toISOString().slice(0,10) + '.png';
-        link.href = image;
-        link.click();
-      }
-      
-      // Change layout
-      function changeLayout() {
-        var layoutSelect = document.getElementById("layoutSelect");
-        var selectedLayout = layoutSelect.value;
-        
-        if (selectedLayout === "hierarchical") {
-          network.setOptions({
-            layout: {
-              hierarchical: {
-                enabled: true,
-                direction: "UD",
-                sortMethod: "directed",
-                nodeSpacing: 200,
-                treeSpacing: 300
-              }
-            }
-          });
-        } else {
-          network.setOptions({
-            layout: {
-              hierarchical: {
-                enabled: false
-              }
-            },
-            physics: {
-              enabled: true,
-              barnesHut: {
-                gravitationalConstant: -2000,
-                centralGravity: 0.3,
-                springLength: 150,
-                springConstant: 0.04
-              }
-            }
-          });
-        }
-      }
-      
-      // Search nodes
       function searchNodes() {
-        var searchText = document.getElementById("searchBox").value.toLowerCase();
-        
-        if (searchText === "") {
-          // Reset all nodes if search is empty
-          nodes.forEach(function(node) {
-            nodes.update({id: node.id, hidden: false});
-          });
-          return;
-        }
-        
-        var matchingNodes = [];
-        
-        // Find matching nodes
-        nodes.forEach(function(node) {
-          var nodeLabel = node.label.toLowerCase();
-          var nodeTitle = node.title ? node.title.toLowerCase() : "";
-          
-          if (nodeLabel.includes(searchText) || nodeTitle.includes(searchText)) {
-            matchingNodes.push(node.id);
-            nodes.update({id: node.id, hidden: false});
-          } else {
-            nodes.update({id: node.id, hidden: true});
-          }
-        });
-        
-        // If nodes were found, focus on them
-        if (matchingNodes.length > 0) {
-          network.fit({
-            nodes: matchingNodes,
-            animation: true
-          });
-        }
+          // Implement search functionality as needed
       }
+      function exportImage() {
+          // Implement export functionality as needed
+      }
+      function changeLayout() {
+          // Implement layout change functionality as needed
+      }
+      
+      // When a node is clicked, get its details and redirect to a custom URL.
+      network.on("click", function(params) {
+          if (params.nodes.length > 0) {
+              var nodeId = params.nodes[0];
+              var clickedNode = nodes.get(nodeId);
+              window.location.href = "detail:" + encodeURIComponent(clickedNode.details);
+          }
+      });
     </script>
   </body>
 </html>
 """
 
-# Column transformation tracker to store detailed information about column changes
 class ColumnTransformationTracker:
     """
     Tracks transformations applied to columns throughout the data processing pipeline.
@@ -334,13 +205,10 @@ class ColumnTransformationTracker:
         self.derived_columns = {}  # Maps derived column_id to source column_id(s)
         
     def add_transformation(self, column_id, transformation_name, parameters, timestamp=None):
-        """Add a transformation record for a specific column"""
         if column_id not in self.column_history:
             self.column_history[column_id] = []
-            
         if timestamp is None:
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
         self.column_history[column_id].append({
             "transformation": transformation_name,
             "parameters": parameters,
@@ -348,42 +216,32 @@ class ColumnTransformationTracker:
         })
         
     def register_derived_column(self, new_column_id, source_column_ids, transformation_name, parameters):
-        """Register a new column derived from one or more source columns"""
         self.derived_columns[new_column_id] = {
             "sources": source_column_ids if isinstance(source_column_ids, list) else [source_column_ids],
             "transformation": transformation_name,
             "parameters": parameters,
             "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
-        
-        # Initialize history for the new column
         if new_column_id not in self.column_history:
             self.column_history[new_column_id] = []
             
     def get_column_history(self, column_id):
-        """Get the transformation history for a specific column"""
         return self.column_history.get(column_id, [])
         
     def get_column_lineage(self, column_id):
-        """Get the complete lineage for a column, including source columns if derived"""
         lineage = {
             "column_id": column_id,
             "history": self.get_column_history(column_id),
             "is_derived": column_id in self.derived_columns
         }
-        
         if column_id in self.derived_columns:
             lineage["derivation"] = self.derived_columns[column_id]
             lineage["source_columns"] = []
-            
             for source_id in self.derived_columns[column_id]["sources"]:
                 lineage["source_columns"].append(self.get_column_lineage(source_id))
-                
         return lineage
         
     def extract_from_config(self, config, registry):
-        """Extract column transformation information from a configuration dictionary"""
-        # Process filters
         filters = config.get("Filters", [])
         for i, filt in enumerate(filters, start=1):
             if len(filt) >= 3:
@@ -394,139 +252,268 @@ class ColumnTransformationTracker:
                     {"condition": filt[1], "value": filt[2]},
                     timestamp=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 )
-        
-        # Process transformations
         transformations = config.get("Transformations", {})
         for trans_name, params in transformations.items():
             if "column" in params:
-                # Single column transformation
                 input_col = params["column"]
                 self.add_transformation(input_col, trans_name, params)
-                
-                # Check if creating a new column
                 if "new_column" in params:
                     new_col = params["new_column"]
                     self.register_derived_column(new_col, input_col, trans_name, params)
-            
             elif "columns" in params:
-                # Multi-column transformation
-                affected = params["columns"]
-                for col in affected:
+                if isinstance(params["columns"], dict):
+                    for col_id, col_details in params["columns"].items():
+                        self.add_transformation(col_id, trans_name, col_details)
+                        if "new_column" in col_details:
+                            new_col = col_details["new_column"]
+                            self.register_derived_column(new_col, col_id, trans_name, col_details)
+                else:
+                    affected = params["columns"]
+                    for col in affected:
+                        self.add_transformation(col, trans_name, params)
+                    if "new_columns" in params:
+                        new_cols = params["new_columns"]
+                        for new_col in new_cols:
+                            self.register_derived_column(new_col, affected, trans_name, params)
+            elif "columns_to_dedup" in params:
+                for col in params["columns_to_dedup"]:
                     self.add_transformation(col, trans_name, params)
-                
-                # Check if creating new columns
-                if "new_columns" in params:
-                    new_cols = params["new_columns"]
-                    for new_col in new_cols:
-                        self.register_derived_column(new_col, affected, trans_name, params)
-        
-        # Process Excel functions
         adv_excel = config.get("Advanced Excel Functions", {})
         for key, params in adv_excel.items():
             if "column" in params:
-                # Single column Excel function
                 input_col = params["column"]
                 self.add_transformation(input_col, f"Excel_{key}", params)
-                
-                # Check if creating a new column
                 if "new_column" in params:
                     new_col = params["new_column"]
                     self.register_derived_column(new_col, input_col, f"Excel_{key}", params)
-            
             elif "columns" in params:
-                # Multi-column Excel function
                 affected = params["columns"]
                 for col in affected:
                     self.add_transformation(col, f"Excel_{key}", params)
+        column_rules = config.get("Column Rules", {})
+        for col_id, rules in column_rules.items():
+            for rule_info in rules:
+                rule_name = rule_info.get("rule", "Custom Rule")
+                rule_details = rule_info.get("details", {})
+                self.add_transformation(
+                    col_id,
+                    rule_name,
+                    rule_details,
+                    timestamp=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                )
+                if "new_column" in rule_details:
+                    new_col = rule_details["new_column"]
+                    self.register_derived_column(new_col, col_id, rule_name, rule_details)
 
-def generate_enhanced_lineage_graph(config, registry, column_tracker=None):
+def convert_tuple_keys_to_str(obj):
+    """
+    Recursively converts dictionary keys that are tuples into strings.
+    Tuple keys are joined with "::" (e.g., ("col_2", "count") becomes "col_2::count").
+    """
+    if isinstance(obj, dict):
+        new_obj = {}
+        for k, v in obj.items():
+            if isinstance(k, tuple):
+                new_key = "::".join(str(x) for x in k)
+            else:
+                new_key = k
+            new_obj[new_key] = convert_tuple_keys_to_str(v)
+        return new_obj
+    elif isinstance(obj, list):
+        return [convert_tuple_keys_to_str(item) for item in obj]
+    else:
+        return obj
 
-    # Create a new column tracker if none provided
+def generate_enhanced_lineage_graph(config, registry, column_tracker=None, view_type="hierarchical", focus_column=None):
+    """
+    Generate an enhanced lineage graph visualization.
+    
+    Args:
+        config (dict): Configuration dictionary with transformation details.
+            It can include extra keys:
+              - "file_upload": { "file_name": ..., "upload_timestamp": ..., "file_size": ..., "file_format": ... }
+              - "header_selection": { "header_row": ..., "original_columns": [...] }
+        registry (dict): Column registry mapping internal IDs to friendly names.
+        column_tracker (ColumnTransformationTracker, optional): Tracker for column transformations.
+        view_type (str): Type of view ("hierarchical", "network", or "column_focused").
+        focus_column (str, optional): Column ID to focus on for column-focused view.
+    
+    Returns:
+        Network: PyVis Network object with the generated graph.
+    """
+    # Create a new column tracker if none provided.
     if column_tracker is None:
         column_tracker = ColumnTransformationTracker()
         column_tracker.extract_from_config(config, registry)
     
-    # Initialize network with modern template
+    # Initialize network with modern template.
     net = Network(height="800px", width="100%", directed=True)
     net.template = Template(modern_template)
     
-    # Set enhanced hierarchical layout options
-    hierarchical_options = {
-        "layout": {
-            "hierarchical": {
-                "enabled": True,
-                "direction": "UD",   
-                "sortMethod": "directed",
-                "nodeSpacing": 200,
-                "treeSpacing": 300,
-                "levelSeparation": 150
-            }
-        },
-        "physics": {
-            "hierarchicalRepulsion": {
-                "nodeDistance": 150,
-                "avoidOverlap": 1
-            },
-            "minVelocity": 0.75
-        },
-        "interaction": {
-            "hover": True,
-            "tooltipDelay": 200,
-            "zoomView": True,
-            "dragView": True
-        },
-        "edges": {
-            "smooth": {
-                "type": "cubicBezier",
-                "forceDirection": "vertical"
-            },
-            "arrows": {
-                "to": {
+    # --- Set Layout Options Based on View Type ---
+    if view_type == "hierarchical":
+        options = {
+            "layout": {
+                "hierarchical": {
                     "enabled": True,
-                    "scaleFactor": 0.5
+                    "direction": "UD",
+                    "sortMethod": "directed",
+                    "nodeSpacing": 200,
+                    "treeSpacing": 300,
+                    "levelSeparation": 150
                 }
             },
-            "color": {
-                "color": "#2B7CE9",
-                "highlight": "#FFA500",
-                "hover": "#2B7CE9"
+            "physics": {
+                "hierarchicalRepulsion": {"nodeDistance": 150, "avoidOverlap": 1},
+                "minVelocity": 0.75
             }
+        }
+    elif view_type == "network":
+        options = {
+            "layout": {"hierarchical": {"enabled": False}},
+            "physics": {
+                "enabled": True,
+                "forceAtlas2Based": {
+                    "gravitationalConstant": -50,
+                    "centralGravity": 0.01,
+                    "springLength": 100,
+                    "springConstant": 0.08
+                },
+                "solver": "forceAtlas2Based",
+                "stabilization": {"iterations": 100}
+            }
+        }
+    elif view_type == "column_focused":
+        # Force a strict sequential pipeline (left-to-right).
+        options = {
+            "layout": {
+                "hierarchical": {
+                    "enabled": True,
+                    "direction": "LR",
+                    "sortMethod": "directed",
+                    "nodeSpacing": 250,
+                    "treeSpacing": 0,
+                    "levelSeparation": 150
+                }
+            },
+            "physics": {"enabled": False}
+        }
+    common_options = {
+        "interaction": {"hover": True, "tooltipDelay": 200, "zoomView": True, "dragView": True},
+        "edges": {
+            "smooth": {"type": "cubicBezier", "forceDirection": "vertical" if view_type == "hierarchical" else "horizontal" if view_type == "column_focused" else "none"},
+            "arrows": {"to": {"enabled": True, "scaleFactor": 0.5}},
+            "color": {"color": "#2B7CE9", "highlight": "#FFA500", "hover": "#2B7CE9"}
         },
         "nodes": {
             "shape": "box",
-            "font": {
-                "face": "Segoe UI",
-                "size": 14
-            },
+            "font": {"face": "Segoe UI", "size": 14},
             "margin": 10,
-            "shadow": {
-                "enabled": True,
-                "size": 3,
-                "x": 3,
-                "y": 3
-            }
+            "shadow": {"enabled": True, "size": 3, "x": 3, "y": 3}
         }
     }
-    net.set_options(json.dumps(hierarchical_options))
+    options.update(common_options)
+    net.set_options(json.dumps(options))
     
-    # --- Source Node ---
+    # --- Add Initial Events: File Upload and Header Selection ---
+    current_node = None
+
+    # File Upload Node (if provided)
+    file_upload = config.get("file_upload", None)
+    if file_upload:
+        upload_details = f"""
+        <h3>File Upload</h3>
+        <div><strong>File Name:</strong> {file_upload.get("file_name", "Unknown")}</div>
+        <div><strong>Uploaded At:</strong> {file_upload.get("upload_timestamp", "Unknown")}</div>
+        <div><strong>File Size:</strong> {file_upload.get("file_size", "Unknown")}</div>
+        <div><strong>File Format:</strong> {file_upload.get("file_format", "Unknown")}</div>
+        """
+        upload_label = f"Upload: {file_upload.get('file_name', 'Unknown')}"
+        net.add_node(upload_label,
+                     label=upload_label,
+                     title="File Upload",
+                     shape="box",
+                     color="#ADD8E6",
+                     details=upload_details,
+                     font={"size": 16, "face": "Segoe UI", "bold": True})
+        current_node = upload_label
+
+    # Header Selection Node (if provided)
+    header_sel = config.get("header_selection", None)
+    if header_sel:
+        header_details = f"""
+        <h3>Header Selection</h3>
+        <div><strong>Header Row:</strong> {header_sel.get("header_row", "Not specified")}</div>
+        <div><strong>Original Columns:</strong> {", ".join(header_sel.get("original_columns", []))}</div>
+        """
+        header_label = f"Header: Row {header_sel.get('header_row', 'N/A')}"
+        net.add_node(header_label,
+                     label=header_label,
+                     title="Header Selection",
+                     shape="box",
+                     color="#FFD700",
+                     details=header_details,
+                     font={"size": 16, "face": "Segoe UI", "bold": True})
+        if current_node:
+            net.add_edge(current_node,
+                         header_label,
+                         title="Header Selected",
+                         width=3,
+                         color={"color": "#2B7CE9", "highlight": "#FFA500"})
+        current_node = header_label
+
+    # --- Source Dataset Node ---
     file_name = config.get("file_name", "Source Dataset")
-    source_label = f"File: {file_name}"
+    source_label = f"Dataset Loaded: {file_name}"
     
-    # Enhanced source node with column details
+    # Track column nodes for direct connections in column-focused view.
+    column_nodes = {}
     column_details = []
     for k in registry:
         friendly_name = internal_to_friendly(k, registry)
         column_history = column_tracker.get_column_history(k)
         transformation_count = len(column_history)
-        
-        # Add badge if column has transformations
         badge = f'<span class="badge" style="background-color: #4CAF50;">{transformation_count}</span>' if transformation_count > 0 else ""
         column_details.append(f"<li>{friendly_name} {badge}</li>")
+        
+        # Create individual column nodes (if needed).
+        if view_type in ["column_focused", "network"]:
+            if focus_column is None or k == focus_column:
+                column_node_id = f"Column: {friendly_name}"
+                column_nodes[k] = column_node_id
+                column_node_details = f"""
+                <h3>Column: {friendly_name}</h3>
+                <div style="margin-top: 10px;">
+                    <p><strong>Internal ID:</strong> {k}</p>
+                    <p><strong>Transformation Count:</strong> {transformation_count}</p>
+                    <p><strong>Is Derived:</strong> {'Yes' if k in column_tracker.derived_columns else 'No'}</p>
+                </div>
+                """
+                if transformation_count > 0:
+                    column_node_details += """
+                    <div style="margin-top: 15px;">
+                        <h4>Transformation History:</h4>
+                        <ul>
+                    """
+                    for entry in column_history:
+                        column_node_details += f"<li><strong>{entry['transformation']}</strong> at {entry['timestamp']}</li>"
+                    column_node_details += """
+                        </ul>
+                    </div>
+                    """
+                node_color = "#FFD700" if k == focus_column else "#FFA07A"
+                border_width = 3 if k == focus_column else 1
+                font_size = 16 if k == focus_column else 14
+                net.add_node(column_node_id,
+                             label=friendly_name,
+                             title=f"Column: {friendly_name}",
+                             shape="ellipse" if view_type == "network" else "box",
+                             color=node_color,
+                             borderWidth=border_width,
+                             details=column_node_details,
+                             font={"size": font_size, "face": "Segoe UI", "bold": k == focus_column})
     
     source_columns = "<ul>" + "\n".join(column_details) + "</ul>"
-    
-    # Create HTML details for the node details panel
     source_details = f"""
     <h3>Source Dataset: {file_name}</h3>
     <div style="margin-top: 10px;">
@@ -537,43 +524,50 @@ def generate_enhanced_lineage_graph(config, registry, column_tracker=None):
         <p><strong>Total Columns:</strong> {len(registry)}</p>
     </div>
     """
-    
-    # Create tooltip with basic information
     source_title = f"File: {file_name}<br>Columns: {len(registry)}"
-    
-    # Add source node with enhanced styling
-    net.add_node(
-        source_label, 
-        label=source_label, 
-        title=source_title, 
-        shape="box", 
-        color="#A9A9A9",
-        details=source_details,
-        font={"size": 16, "face": "Segoe UI", "bold": True}
-    )
+    net.add_node(source_label,
+                 label=source_label,
+                 title=source_title,
+                 shape="box",
+                 color="#A9A9A9",
+                 details=source_details,
+                 font={"size": 16, "face": "Segoe UI", "bold": True})
+    if current_node:
+        net.add_edge(current_node,
+                     source_label,
+                     title="Data Loaded",
+                     width=3,
+                     color={"color": "#2B7CE9", "highlight": "#FFA500"})
     current_node = source_label
 
+    # For column-focused/network views, connect source to each column node.
+    if view_type in ["column_focused", "network"] and column_nodes:
+        for col_id, col_node_id in column_nodes.items():
+            if view_type == "column_focused":
+                edge_width = 3
+                edge_color = {"color": "#FF4500", "highlight": "#FF6347"}
+            else:
+                edge_width = 2.5 if view_type == "column_focused" else 1.5
+                edge_color = {"color": "#FF5733" if focus_column == col_id else "#A9A9A9", "highlight": "#FFA500"}
+            net.add_edge(source_label,
+                         col_node_id,
+                         title="Contains Column",
+                         width=edge_width,
+                         color=edge_color)
+    
     # --- Process Filters ---
     filters = config.get("Filters", [])
     for i, filt in enumerate(filters, start=1):
-        # Expected format: (column, condition, value, [optional metrics])
         col, cond, val = filt[0], filt[1], filt[2]
         metrics = filt[3] if len(filt) > 3 else {}
         friendly_col = internal_to_friendly(col, registry)
-        
-        # Enhanced metrics display
         rows_before = metrics.get('rows_before', '-')
         rows_after = metrics.get('rows_after', '-')
         row_reduction = ""
-        
-        if rows_before != '-' and rows_after != '-':
-            if rows_before > rows_after:
-                reduction_pct = ((rows_before - rows_after) / rows_before) * 100
-                row_reduction = f"<span style='color: #FF5733;'>(-{reduction_pct:.1f}%)</span>"
-        
+        if rows_before != '-' and rows_after != '-' and rows_before > rows_after:
+            reduction_pct = ((rows_before - rows_after) / rows_before) * 100
+            row_reduction = f"<span style='color: #FF5733;'>(-{reduction_pct:.1f}%)</span>"
         metric_info = f"Rows Before: {rows_before}, Rows After: {rows_after} {row_reduction}"
-        
-        # Create HTML details for the node details panel
         filter_details_html = f"""
         <h3>Filter {i}: {friendly_col}</h3>
         <div style="margin-top: 10px;">
@@ -585,107 +579,121 @@ def generate_enhanced_lineage_graph(config, registry, column_tracker=None):
             <h4>Column History:</h4>
             <ul>
         """
-        
-        # Add column transformation history
         column_history = column_tracker.get_column_history(col)
         for entry in column_history:
             filter_details_html += f"<li><strong>{entry['transformation']}</strong> at {entry['timestamp']}</li>"
-        
         filter_details_html += """
             </ul>
         </div>
         """
-        
-        # Create tooltip with basic information
         filter_tooltip = f"Filter {i}<br>{friendly_col}: {cond} {val}<br>{metric_info}"
-        
-        # Add filter node with enhanced styling
         filter_node = f"Filter {i} - {friendly_col}"
-        net.add_node(
-            filter_node, 
-            label=f"Filter {i}", 
-            title=filter_tooltip, 
-            shape="diamond", 
-            color="#ADD8E6",
-            details=filter_details_html,
-            font={"size": 14, "face": "Segoe UI"}
-        )
-        net.add_edge(
-            current_node, 
-            filter_node, 
-            title="Apply Filter",
-            width=2,
-            color={"color": "#2B7CE9", "highlight": "#FFA500"}
-        )
-        current_node = filter_node
+        net.add_node(filter_node,
+                     label=f"Filter {i}",
+                     title=filter_tooltip,
+                     shape="diamond",
+                     color="#ADD8E6",
+                     details=filter_details_html,
+                     font={"size": 14, "face": "Segoe UI"})
+        if view_type == "hierarchical":
+            net.add_edge(current_node,
+                         filter_node,
+                         title="Apply Filter",
+                         width=2,
+                         color={"color": "#2B7CE9", "highlight": "#FFA500"})
+            current_node = filter_node
+        else:
+            if view_type in ["column_focused", "network"] and col in column_nodes:
+                net.add_edge(column_nodes[col],
+                             filter_node,
+                             title=f"Filter: {cond} {val}",
+                             width=2,
+                             color={"color": "#2B7CE9", "highlight": "#FFA500"})
+                if view_type == "column_focused" and (focus_column is None or col == focus_column):
+                    current_node = filter_node
+            else:
+                net.add_edge(current_node,
+                             filter_node,
+                             title="Apply Filter",
+                             width=2,
+                             color={"color": "#2B7CE9", "highlight": "#FFA500"})
+                current_node = filter_node
 
     # --- Process Generic Transformations ---
     transformations = config.get("Transformations", {})
     sorted_trans = sorted(transformations.items(), key=lambda kv: kv[1].get("sequence", 9999))
     for trans_name, params in sorted_trans:
-        # Basic transformation details
-        trans_details = f"Transformation: {trans_name}\nParameters:\n{json.dumps(params, indent=2)}"
-        
-        # Enhanced HTML details for the node details panel
+        # Convert tuple keys in params before dumping to JSON.
+        serializable_params = convert_tuple_keys_to_str(params)
+        trans_details = f"Transformation: {trans_name}\nParameters:\n{json.dumps(serializable_params, indent=2)}"
         trans_details_html = f"""
         <h3>Transformation: {trans_name}</h3>
         <div style="margin-top: 10px;">
         """
-        
-        # Track affected columns for visualization
         affected_columns = []
         output_columns = []
-        
         if "column" in params:
             input_col = params["column"]
             friendly_input = internal_to_friendly(input_col, registry)
             affected_columns.append(input_col)
             trans_details_html += f"<p><strong>Input Column:</strong> {friendly_input}</p>"
-            
             if "new_column" in params:
                 new_col = params["new_column"]
                 friendly_new = internal_to_friendly(new_col, registry) if new_col in registry else new_col
                 output_columns.append(new_col)
                 trans_details_html += f"<p><strong>Output Column:</strong> {friendly_new}</p>"
-        
         elif "columns" in params:
-            affected = params["columns"]
-            affected_columns.extend(affected)
-            
-            if set(affected) == set(registry.keys()):
-                trans_details_html += "<p><strong>Affected Columns:</strong> All columns</p>"
-            else:
-                friendly_list = [internal_to_friendly(c, registry) for c in affected]
+            if isinstance(params["columns"], dict):
+                affected_cols = list(params["columns"].keys())
+                affected_columns.extend(affected_cols)
+                friendly_list = [internal_to_friendly(c, registry) for c in affected_cols]
                 trans_details_html += f"<p><strong>Affected Columns:</strong> {', '.join(friendly_list)}</p>"
-            
-            if "new_columns" in params:
-                affected_new = params["new_columns"]
-                output_columns.extend(affected_new)
-                
-                if set(affected_new) == set(registry.keys()):
-                    trans_details_html += "<p><strong>Output Columns:</strong> All columns</p>"
+                trans_details_html += """
+                <div style="margin-top: 10px;">
+                    <h4>Column Operations:</h4>
+                    <ul>
+                """
+                for col_id, col_details in params["columns"].items():
+                    friendly_name = internal_to_friendly(col_id, registry)
+                    if "operations" in col_details:
+                        operations = ", ".join(col_details["operations"])
+                        trans_details_html += f"<li><strong>{friendly_name}:</strong> {operations}</li>"
+                    elif "old_sub" in col_details and "new_sub" in col_details:
+                        trans_details_html += f"<li><strong>{friendly_name}:</strong> Replace '{col_details['old_sub']}' with '{col_details['new_sub']}'</li>"
+                    else:
+                        trans_details_html += f"<li><strong>{friendly_name}:</strong> Custom operation</li>"
+                trans_details_html += """
+                    </ul>
+                </div>
+                """
+            else:
+                affected = params["columns"]
+                affected_columns.extend(affected)
+                if set(affected) == set(registry.keys()):
+                    trans_details_html += "<p><strong>Affected Columns:</strong> All columns</p>"
                 else:
-                    friendly_new = [internal_to_friendly(c, registry) for c in affected_new]
-                    trans_details_html += f"<p><strong>Output Columns:</strong> {', '.join(friendly_new)}</p>"
+                    friendly_list = [internal_to_friendly(c, registry) for c in affected]
+                    trans_details_html += f"<p><strong>Affected Columns:</strong> {', '.join(friendly_list)}</p>"
+        elif "columns_to_dedup" in params:
+            affected = params["columns_to_dedup"]
+            affected_columns.extend(affected)
+            friendly_list = [internal_to_friendly(c, registry) for c in affected]
+            trans_details_html += f"<p><strong>Columns to Deduplicate:</strong> {', '.join(friendly_list)}</p>"
+            trans_details_html += f"<p><strong>Keep:</strong> {params.get('keep', 'first')}</p>"
         else:
             affected_columns.extend(list(registry.keys()))
             trans_details_html += "<p><strong>Affected Columns:</strong> All columns</p>"
         
-        # Add metrics if available
         if "metrics" in params:
             metrics = params["metrics"]
             rows_before = metrics.get('rows_before', '-')
             rows_after = metrics.get('rows_after', '-')
-            
-            # Calculate and display percentage change
             change_html = ""
-            if rows_before != '-' and rows_after != '-':
-                if rows_before != rows_after:
-                    change_pct = ((rows_after - rows_before) / rows_before) * 100
-                    color = "#4CAF50" if change_pct >= 0 else "#FF5733"
-                    sign = "+" if change_pct >= 0 else ""
-                    change_html = f"<span style='color: {color};'>({sign}{change_pct:.1f}%)</span>"
-            
+            if rows_before != '-' and rows_after != '-' and rows_before != rows_after:
+                change_pct = ((rows_after - rows_before) / rows_before) * 100
+                color = "#4CAF50" if change_pct >= 0 else "#FF5733"
+                sign = "+" if change_pct >= 0 else ""
+                change_html = f"<span style='color: {color};'>({sign}{change_pct:.1f}%)</span>"
             trans_details_html += f"""
             <div style="margin-top: 10px; padding: 8px; background-color: #f0f8ff; border-radius: 4px;">
                 <p><strong>Data Impact:</strong></p>
@@ -693,8 +701,6 @@ def generate_enhanced_lineage_graph(config, registry, column_tracker=None):
                 <p>Rows After: {rows_after} {change_html}</p>
             </div>
             """
-        
-        # Add sample data if available
         if "sample_data" in params:
             sample_data = params['sample_data']
             trans_details_html += f"""
@@ -703,12 +709,9 @@ def generate_enhanced_lineage_graph(config, registry, column_tracker=None):
                 <pre style="background-color: #f8f8f8; padding: 10px; border-radius: 4px; overflow: auto; max-height: 200px;">{sample_data}</pre>
             </div>
             """
-        
-        # Add timestamp if available
         if "timestamp" in params:
             trans_details_html += f"<p><strong>Timestamp:</strong> {params['timestamp']}</p>"
         
-        # Add column transformation history section
         trans_details_html += """
         <div style="margin-top: 15px;">
             <h4>Column Transformations:</h4>
@@ -719,14 +722,11 @@ def generate_enhanced_lineage_graph(config, registry, column_tracker=None):
                     <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Latest Transformation</th>
                 </tr>
         """
-        
-        # Add rows for each affected column
         for col in affected_columns:
             friendly_name = internal_to_friendly(col, registry)
             history = column_tracker.get_column_history(col)
             count = len(history)
             latest = history[-1]['transformation'] if history else "None"
-            
             trans_details_html += f"""
                 <tr>
                     <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">{friendly_name}</td>
@@ -734,113 +734,195 @@ def generate_enhanced_lineage_graph(config, registry, column_tracker=None):
                     <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">{latest}</td>
                 </tr>
             """
-        
         trans_details_html += """
             </table>
         </div>
         """
-        
-        # Close the main div
         trans_details_html += "</div>"
         
-        # Create tooltip with basic information
+        detailed_label = trans_name
+        if trans_name == "Replace Substring" and "columns" in params and isinstance(params["columns"], dict):
+            for col_id, col_details in params["columns"].items():
+                if "old_sub" in col_details and "new_sub" in col_details:
+                    friendly_name = internal_to_friendly(col_id, registry)
+                    detailed_label = f"Replace '{col_details['old_sub']}'\nwith '{col_details['new_sub']}'\nin {friendly_name}"
+                    break
+        elif trans_name == "Trim" and "columns" in params and isinstance(params["columns"], dict):
+            col_ops = []
+            for col_id, col_details in params["columns"].items():
+                if "operations" in col_details:
+                    friendly_name = internal_to_friendly(col_id, registry)
+                    ops = ", ".join(col_details["operations"])
+                    col_ops.append(f"{friendly_name}: {ops}")
+            if col_ops:
+                detailed_label = f"Trim\n{col_ops[0]}"
+                if len(col_ops) > 1:
+                    detailed_label += f"\n(+{len(col_ops)-1} more)"
+        elif trans_name == "Remove Duplicates" and "columns_to_dedup" in params:
+            cols = params["columns_to_dedup"]
+            friendly_cols = [internal_to_friendly(c, registry) for c in cols]
+            keep = params.get("keep", "first")
+            if len(friendly_cols) <= 2:
+                cols_str = ", ".join(friendly_cols)
+                detailed_label = f"Remove Duplicates\nColumns: {cols_str}\nKeep: {keep}"
+            else:
+                detailed_label = f"Remove Duplicates\nColumns: {len(friendly_cols)} cols\nKeep: {keep}"
+        
         tooltip_text = f"{trans_name}"
         if "column" in params:
             tooltip_text += f"<br>Column: {internal_to_friendly(params['column'], registry)}"
+        elif "columns" in params and isinstance(params["columns"], dict):
+            friendly_list = [internal_to_friendly(c, registry) for c in params["columns"].keys()]
+            tooltip_text += f"<br>Columns: {', '.join(friendly_list)}"
+            for col_id, col_details in params["columns"].items():
+                friendly_name = internal_to_friendly(col_id, registry)
+                if "operations" in col_details:
+                    ops = ", ".join(col_details["operations"])
+                    tooltip_text += f"<br>{friendly_name}: {ops}"
+                elif "old_sub" in col_details and "new_sub" in col_details:
+                    tooltip_text += f"<br>{friendly_name}: Replace '{col_details['old_sub']}' with '{col_details['new_sub']}'"
         elif "columns" in params and len(params["columns"]) <= 3:
-            cols = [internal_to_friendly(c, registry) for c in params["columns"]]
-            tooltip_text += f"<br>Columns: {', '.join(cols)}"
+            friendly_list = [internal_to_friendly(c, registry) for c in params["columns"]]
+            tooltip_text += f"<br>Columns: {', '.join(friendly_list)}"
+        elif "columns_to_dedup" in params:
+            friendly_list = [internal_to_friendly(c, registry) for c in params["columns_to_dedup"]]
+            tooltip_text += f"<br>Columns to deduplicate: {', '.join(friendly_list)}"
+            tooltip_text += f"<br>Keep: {params.get('keep', 'first')}"
+        
+        trans_node = f"Transform {trans_name}"
+        node_color = "#90EE90"  # Light green for transformations
+        net.add_node(trans_node,
+                     label=detailed_label,
+                     title=tooltip_text,
+                     shape="ellipse",
+                     color=node_color,
+                     details=trans_details_html,
+                     font={"size": 14, "face": "Segoe UI"})
+        if view_type == "hierarchical":
+            edge_title = "Apply Transformation"
+            if "column" in params:
+                edge_title = f"Transform {internal_to_friendly(params['column'], registry)}"
+            net.add_edge(current_node,
+                         trans_node,
+                         title=edge_title,
+                         width=2,
+                         color={"color": "#2B7CE9", "highlight": "#FFA500"})
+            current_node = trans_node
         else:
-            tooltip_text += "<br>Multiple columns affected"
-        
-        # Set node color and shape based on transformation type
-        node_color = "#FFA500"  # Default orange
-        node_shape = "ellipse"
-        
-        if trans_name.lower() in ["replace substring", "change case", "trim"]:
-            node_color = "#EE82EE"  # Violet for text manipulations
-        
-        # Add transformation count badge to label if multiple columns affected
-        label_text = trans_name
-        if len(affected_columns) > 1:
-            label_text = f"{trans_name} ({len(affected_columns)})"
-        
-        # Create unique node ID
-        node_id = f"{trans_name}_{hash(json.dumps(params)) % 10000}"
-        
-        # Add transformation node with enhanced styling
-        drilldown_url = params.get("drilldown_url", "")
-        net.add_node(
-            node_id, 
-            label=label_text, 
-            title=tooltip_text, 
-            shape=node_shape, 
-            color=node_color,
-            details=trans_details_html,
-            url=drilldown_url,
-            font={"size": 14, "face": "Segoe UI"}
-        )
-        
-        # Add edge with descriptive title
-        edge_title = "Transformation Step"
-        if "metrics" in params:
-            metrics = params["metrics"]
-            if "rows_before" in metrics and "rows_after" in metrics:
-                edge_title += f" ({metrics['rows_after']} rows)"
-        
-        net.add_edge(
-            current_node, 
-            node_id, 
-            title=edge_title,
-            width=2,
-            color={"color": "#2B7CE9", "highlight": "#FFA500"}
-        )
-        current_node = node_id
+            if view_type in ["column_focused", "network"]:
+                connected_to_column = False
+                if "column" in params and params["column"] in column_nodes:
+                    input_col = params["column"]
+                    net.add_edge(column_nodes[input_col],
+                                 trans_node,
+                                 title=f"Input: {internal_to_friendly(input_col, registry)}" if "new_column" not in params 
+                                       else f"Transform {internal_to_friendly(input_col, registry)} → {internal_to_friendly(params['new_column'], registry)}",
+                                 width=2,
+                                 color={"color": "#2B7CE9", "highlight": "#FFA500"})
+                    connected_to_column = True
+                    if "new_column" in params and params["new_column"] in column_nodes:
+                        output_col = params["new_column"]
+                        net.add_edge(trans_node,
+                                     column_nodes[output_col],
+                                     title=f"Output: {internal_to_friendly(output_col, registry)}",
+                                     width=2,
+                                     color={"color": "#4CAF50", "highlight": "#FFA500"})
+                elif "columns" in params:
+                    if isinstance(params["columns"], dict):
+                        for col_id, col_details in params["columns"].items():
+                            if col_id in column_nodes:
+                                net.add_edge(column_nodes[col_id],
+                                             trans_node,
+                                             title=f"Transform {internal_to_friendly(col_id, registry)}",
+                                             width=2,
+                                             color={"color": "#2B7CE9", "highlight": "#FFA500"})
+                                connected_to_column = True
+                    else:
+                        for col in params["columns"]:
+                            if col in column_nodes:
+                                net.add_edge(column_nodes[col],
+                                             trans_node,
+                                             title=f"Transform {internal_to_friendly(col, registry)}",
+                                             width=2,
+                                             color={"color": "#2B7CE9", "highlight": "#FFA500"})
+                                connected_to_column = True
+                elif "columns_to_dedup" in params:
+                    for col in params["columns_to_dedup"]:
+                        if col in column_nodes:
+                            net.add_edge(column_nodes[col],
+                                         trans_node,
+                                         title=f"Deduplicate {internal_to_friendly(col, registry)} (Keep: {params.get('keep', 'first')})",
+                                         width=2,
+                                         color={"color": "#2B7CE9", "highlight": "#FFA500"})
+                            connected_to_column = True
+                    if "new_columns" in params:
+                        for new_col in params["new_columns"]:
+                            if new_col in column_nodes:
+                                net.add_edge(trans_node,
+                                             column_nodes[new_col],
+                                             title=f"Output: {internal_to_friendly(new_col, registry)}",
+                                             width=2,
+                                             color={"color": "#4CAF50", "highlight": "#FFA500"})
+                if view_type == "column_focused" and connected_to_column:
+                    if focus_column is not None:
+                        if (("column" in params and params["column"] == focus_column) or 
+                            ("columns" in params and isinstance(params["columns"], dict) and focus_column in params["columns"]) or
+                            ("columns" in params and not isinstance(params["columns"], dict) and focus_column in params["columns"]) or
+                            ("columns_to_dedup" in params and focus_column in params["columns_to_dedup"])):
+                            current_node = trans_node
+                    else:
+                        current_node = trans_node
+                if not connected_to_column:
+                    edge_title = "Apply Transformation"
+                    net.add_edge(current_node,
+                                 trans_node,
+                                 title=edge_title,
+                                 width=2,
+                                 color={"color": "#2B7CE9", "highlight": "#FFA500"})
+                    current_node = trans_node
+            else:
+                edge_title = "Apply Transformation"
+                if "column" in params:
+                    edge_title = f"Transform {internal_to_friendly(params['column'], registry)}"
+                net.add_edge(current_node,
+                             trans_node,
+                             title=edge_title,
+                             width=2,
+                             color={"color": "#2B7CE9", "highlight": "#FFA500"})
+                current_node = trans_node
 
-    # --- Process Advanced Excel Functions ---
+    # --- Process Excel Functions ---
     adv_excel = config.get("Advanced Excel Functions", {})
     if adv_excel:
         for key, params in adv_excel.items():
-            # Basic Excel function details
-            excel_details = f"Excel Function: {key}\nParameters:\n{json.dumps(params, indent=2)}"
-            
-            # Enhanced HTML details for the node details panel
+            serializable_params = convert_tuple_keys_to_str(params)
+            excel_details = f"Excel Function: {key}\nParameters:\n{json.dumps(serializable_params, indent=2)}"
             excel_details_html = f"""
             <h3>Excel Function: {key}</h3>
             <div style="margin-top: 10px;">
             """
-            
-            # Track affected columns for visualization
             affected_columns = []
             output_columns = []
-            
             if "column" in params:
                 input_col = params["column"]
                 friendly = internal_to_friendly(input_col, registry)
                 affected_columns.append(input_col)
                 excel_details_html += f"<p><strong>Input Column:</strong> {friendly}</p>"
-                
                 if "new_column" in params:
                     new_col = params["new_column"]
                     friendly_new = internal_to_friendly(new_col, registry) if new_col in registry else new_col
                     output_columns.append(new_col)
                     excel_details_html += f"<p><strong>Output Column:</strong> {friendly_new}</p>"
-            
             elif "columns" in params:
                 affected = params["columns"]
                 affected_columns.extend(affected)
-                
                 if set(affected) == set(registry.keys()):
                     excel_details_html += "<p><strong>Affected Columns:</strong> All columns</p>"
                 else:
                     friendly_list = [internal_to_friendly(c, registry) for c in affected]
                     excel_details_html += f"<p><strong>Affected Columns:</strong> {', '.join(friendly_list)}</p>"
-            
-            # Add timestamp if available
             if "timestamp" in params:
                 excel_details_html += f"<p><strong>Timestamp:</strong> {params['timestamp']}</p>"
-            
-            # Add sample data if available
             if "sample_data" in params:
                 sample_data = params['sample_data']
                 excel_details_html += f"""
@@ -849,8 +931,6 @@ def generate_enhanced_lineage_graph(config, registry, column_tracker=None):
                     <pre style="background-color: #f8f8f8; padding: 10px; border-radius: 4px; overflow: auto; max-height: 200px;">{sample_data}</pre>
                 </div>
                 """
-            
-            # Add column transformation history section
             excel_details_html += """
             <div style="margin-top: 15px;">
                 <h4>Column Transformations:</h4>
@@ -861,14 +941,11 @@ def generate_enhanced_lineage_graph(config, registry, column_tracker=None):
                         <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Latest Transformation</th>
                     </tr>
             """
-            
-            # Add rows for each affected column
             for col in affected_columns:
                 friendly_name = internal_to_friendly(col, registry)
                 history = column_tracker.get_column_history(col)
                 count = len(history)
                 latest = history[-1]['transformation'] if history else "None"
-                
                 excel_details_html += f"""
                     <tr>
                         <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">{friendly_name}</td>
@@ -876,65 +953,91 @@ def generate_enhanced_lineage_graph(config, registry, column_tracker=None):
                         <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">{latest}</td>
                     </tr>
                 """
-            
             excel_details_html += """
                 </table>
             </div>
             """
-            
-            # Close the main div
             excel_details_html += "</div>"
-            
-            # Create tooltip with basic information
             tooltip_text = f"Excel: {key}"
             if "column" in params:
                 tooltip_text += f"<br>Column: {internal_to_friendly(params['column'], registry)}"
-            elif "columns" in params and len(params["columns"]) <= 3:
-                cols = [internal_to_friendly(c, registry) for c in params["columns"]]
-                tooltip_text += f"<br>Columns: {', '.join(cols)}"
+            excel_node = f"Excel {key}"
+            node_color = "#FFD700"
+            net.add_node(excel_node,
+                         label=f"Excel: {key}",
+                         title=tooltip_text,
+                         shape="box",
+                         color=node_color,
+                         details=excel_details_html,
+                         font={"size": 14, "face": "Segoe UI"})
+            if view_type == "hierarchical":
+                edge_title = "Apply Excel Function"
+                if "column" in params:
+                    edge_title = f"Excel on {internal_to_friendly(params['column'], registry)}"
+                net.add_edge(current_node,
+                             excel_node,
+                             title=edge_title,
+                             width=2,
+                             color={"color": "#2B7CE9", "highlight": "#FFA500"})
+                current_node = excel_node
             else:
-                tooltip_text += "<br>Multiple columns affected"
-            
-            # Add transformation count badge to label if multiple columns affected
-            label_text = key
-            if len(affected_columns) > 1:
-                label_text = f"{key} ({len(affected_columns)})"
-            
-            # Create unique node ID
-            node_id = f"Excel_{key}_{hash(json.dumps(params)) % 10000}"
-            
-            # Add Excel function node with enhanced styling
-            net.add_node(
-                node_id, 
-                label=label_text, 
-                title=tooltip_text, 
-                shape="ellipse", 
-                color="#008000",
-                details=excel_details_html,
-                font={"size": 14, "face": "Segoe UI"}
-            )
-            
-            # Add edge with descriptive title
-            net.add_edge(
-                current_node, 
-                node_id, 
-                title="Excel Transformation",
-                width=2,
-                color={"color": "#2B7CE9", "highlight": "#FFA500"}
-            )
-            current_node = node_id
+                if view_type in ["column_focused", "network"]:
+                    connected_to_column = False
+                    if "column" in params and params["column"] in column_nodes:
+                        input_col = params["column"]
+                        net.add_edge(column_nodes[input_col],
+                                     excel_node,
+                                     title=f"Input to Excel {key}",
+                                     width=2,
+                                     color={"color": "#2B7CE9", "highlight": "#FFA500"})
+                        connected_to_column = True
+                        if "new_column" in params and params["new_column"] in column_nodes:
+                            output_col = params["new_column"]
+                            net.add_edge(excel_node,
+                                         column_nodes[output_col],
+                                         title=f"Output of Excel {key}",
+                                         width=2,
+                                         color={"color": "#4CAF50", "highlight": "#FFA500"})
+                    elif "columns" in params:
+                        for col in params["columns"]:
+                            if col in column_nodes:
+                                net.add_edge(column_nodes[col],
+                                             excel_node,
+                                             title=f"Input to Excel {key}",
+                                             width=2,
+                                             color={"color": "#2B7CE9", "highlight": "#FFA500"})
+                                connected_to_column = True
+                    if view_type == "column_focused" and connected_to_column and (focus_column is None or 
+                       (("column" in params and params["column"] == focus_column) or 
+                        ("columns" in params and focus_column in params["columns"]))):
+                        current_node = excel_node
+                    if not connected_to_column:
+                        edge_title = "Apply Excel Function"
+                        net.add_edge(current_node,
+                                     excel_node,
+                                     title=edge_title,
+                                     width=2,
+                                     color={"color": "#2B7CE9", "highlight": "#FFA500"})
+                        current_node = excel_node
+                else:
+                    edge_title = "Apply Excel Function"
+                    if "column" in params:
+                        edge_title = f"Excel on {internal_to_friendly(params['column'], registry)}"
+                    net.add_edge(current_node,
+                                 excel_node,
+                                 title=edge_title,
+                                 width=2,
+                                 color={"color": "#2B7CE9", "highlight": "#FFA500"})
+                    current_node = excel_node
 
-    # --- Final Target Node ---
-    final_node = "Final Output"
-    
-    # Create HTML details for the node details panel
+    # --- Final Output Node ---
+    final_node = "Final Dataset"
     final_details_html = f"""
     <h3>Final Transformed Dataset</h3>
     <div style="margin-top: 10px;">
-        <p><strong>Status:</strong> <span style="color: #4CAF50;">Ready for Use</span></p>
-        <p><strong>Transformations Applied:</strong> {len(sorted_trans) + len(adv_excel) + len(filters)}</p>
+        <p><strong>Total Columns:</strong> {len(registry)}</p>
+        <p><strong>Transformations Applied:</strong> {len(filters) + len(transformations) + len(adv_excel)}</p>
     </div>
-    
     <div style="margin-top: 15px;">
         <h4>Column Summary:</h4>
         <table style="width: 100%; border-collapse: collapse;">
@@ -944,14 +1047,11 @@ def generate_enhanced_lineage_graph(config, registry, column_tracker=None):
                 <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Is Derived</th>
             </tr>
     """
-    
-    # Add rows for each column in the registry
     for col_id in registry:
         friendly_name = internal_to_friendly(col_id, registry)
         history = column_tracker.get_column_history(col_id)
         count = len(history)
         is_derived = "Yes" if col_id in column_tracker.derived_columns else "No"
-        
         final_details_html += f"""
             <tr>
                 <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">{friendly_name}</td>
@@ -959,34 +1059,43 @@ def generate_enhanced_lineage_graph(config, registry, column_tracker=None):
                 <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">{is_derived}</td>
             </tr>
         """
-    
     final_details_html += """
         </table>
     </div>
     """
-    
-    # Create tooltip with basic information
     final_title = "Transformed Data Ready for Use"
-    
-    # Add final node with enhanced styling
-    net.add_node(
-        final_node, 
-        label=final_node, 
-        title=final_title, 
-        shape="box", 
-        color="#FFFF00",
-        details=final_details_html,
-        font={"size": 16, "face": "Segoe UI", "bold": True}
-    )
-    
-    # Add edge with descriptive title
-    net.add_edge(
-        current_node, 
-        final_node, 
-        title="Output Data",
-        width=3,
-        color={"color": "#2B7CE9", "highlight": "#FFA500"}
-    )
+    net.add_node(final_node,
+                 label=final_node,
+                 title=final_title,
+                 shape="box",
+                 color="#FFFF00",
+                 details=final_details_html,
+                 font={"size": 16, "face": "Segoe UI", "bold": True})
+    if view_type == "hierarchical":
+        net.add_edge(current_node,
+                     final_node,
+                     title="Output Data",
+                     width=3,
+                     color={"color": "#2B7CE9", "highlight": "#FFA500"})
+    elif view_type in ["column_focused", "network"]:
+        for col_id, col_node_id in column_nodes.items():
+            if len(column_tracker.get_column_history(col_id)) > 0:
+                net.add_edge(col_node_id,
+                             final_node,
+                             title="Final Output",
+                             width=2,
+                             color={"color": "#4CAF50", "highlight": "#FFA500"})
+        net.add_edge(current_node,
+                     final_node,
+                     title="Output Data",
+                     width=3,
+                     color={"color": "#2B7CE9", "highlight": "#FFA500"})
+    else:
+        net.add_edge(current_node,
+                     final_node,
+                     title="Output Data",
+                     width=3,
+                     color={"color": "#2B7CE9", "highlight": "#FFA500"})
     
     return net
 
@@ -1000,42 +1109,29 @@ class EnhancedLineageDialog(QDialog):
         self.registry = registry
         self.column_tracker = ColumnTransformationTracker()
         self.column_tracker.extract_from_config(config, registry)
-        
         self.setWindowTitle("Enhanced Data Lineage")
         self.resize(1200, 900)
         self.initUI()
         
     def initUI(self):
-        # Main layout
         main_layout = QVBoxLayout(self)
-        
-        # Add toolbar
         toolbar = QToolBar()
         toolbar.setIconSize(QSize(24, 24))
         toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        
-        # Add toolbar actions
         help_action = QAction("Help", self)
         help_action.triggered.connect(self.showHelp)
         toolbar.addAction(help_action)
-        
         export_action = QAction("Export", self)
         export_action.triggered.connect(self.exportLineage)
         toolbar.addAction(export_action)
-        
-        # Add view options
         toolbar.addSeparator()
         toolbar.addWidget(QLabel("View Options:"))
-        
         self.view_combo = QComboBox()
         self.view_combo.addItems(["Hierarchical View", "Network View", "Column-Focused View"])
         self.view_combo.currentIndexChanged.connect(self.changeView)
         toolbar.addWidget(self.view_combo)
-        
-        # Add column filter
         toolbar.addSeparator()
         toolbar.addWidget(QLabel("Filter by Column:"))
-        
         self.column_combo = QComboBox()
         self.column_combo.addItem("All Columns")
         for col_id in self.registry:
@@ -1043,84 +1139,68 @@ class EnhancedLineageDialog(QDialog):
             self.column_combo.addItem(friendly_name)
         self.column_combo.currentIndexChanged.connect(self.filterByColumn)
         toolbar.addWidget(self.column_combo)
-        
         main_layout.addWidget(toolbar)
         
-        # Create splitter for main content
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        
-        # Web view for lineage graph
         self.web_view = QWebEngineView()
-        
-        # Details panel
+        custom_page = CustomWebEnginePage(self.web_view, self.handleNodeClick)
+        self.web_view.setPage(custom_page)
         details_frame = QFrame()
         details_frame.setFrameShape(QFrame.Shape.StyledPanel)
         details_layout = QVBoxLayout(details_frame)
-        
         details_header = QLabel("Column Details")
         details_header.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         details_layout.addWidget(details_header)
-        
         self.details_browser = QTextBrowser()
         self.details_browser.setOpenExternalLinks(True)
         details_layout.addWidget(self.details_browser)
-        
-        # Add column selection for details
         column_select_layout = QHBoxLayout()
         column_select_layout.addWidget(QLabel("Select Column:"))
-        
         self.details_column_combo = QComboBox()
         for col_id in self.registry:
             friendly_name = internal_to_friendly(col_id, self.registry)
             self.details_column_combo.addItem(friendly_name)
         self.details_column_combo.currentIndexChanged.connect(self.updateColumnDetails)
         column_select_layout.addWidget(self.details_column_combo)
-        
         details_layout.addLayout(column_select_layout)
-        
-        # Add widgets to splitter
         splitter.addWidget(self.web_view)
         splitter.addWidget(details_frame)
-        
-        # Set initial splitter sizes (70% graph, 30% details)
         splitter.setSizes([700, 300])
-        
         main_layout.addWidget(splitter)
-        
-        # Generate and display the lineage graph
         self.generateLineageGraph()
-        
-        # Update column details for the first column
         if self.details_column_combo.count() > 0:
             self.updateColumnDetails(0)
     
-    def generateLineageGraph(self):
-        """Generate and display the lineage graph"""
-        net = generate_enhanced_lineage_graph(self.config, self.registry, self.column_tracker)
+    def handleNodeClick(self, url):
+        url_str = url.toString()
+        if url_str.startswith("detail:"):
+            import urllib.parse
+            details_html = urllib.parse.unquote(url_str[7:])
+            self.details_browser.setHtml(details_html)
+    
+    def generateLineageGraph(self, view_type="hierarchical", focus_column=None):
+        net = generate_enhanced_lineage_graph(
+            self.config, 
+            self.registry, 
+            self.column_tracker,
+            view_type=view_type,
+            focus_column=focus_column
+        )
         html_content = net.generate_html()
         self.web_view.setHtml(html_content, QUrl("about:blank"))
     
     def updateColumnDetails(self, index):
-        """Update the details panel with information about the selected column"""
         if index < 0 or self.details_column_combo.count() == 0:
             return
-            
         friendly_name = self.details_column_combo.currentText()
-        
-        # Find the internal column ID
         col_id = None
         for k, v in self.registry.items():
             if internal_to_friendly(k, self.registry) == friendly_name:
                 col_id = k
                 break
-        
         if col_id is None:
             return
-            
-        # Get column lineage
         lineage = self.column_tracker.get_column_lineage(col_id)
-        
-        # Create HTML content for details
         html = f"""
         <h2 style="color: #2B7CE9;">{friendly_name}</h2>
         <div style="margin-top: 10px;">
@@ -1129,12 +1209,9 @@ class EnhancedLineageDialog(QDialog):
             <p><strong>Is Derived:</strong> {'Yes' if lineage['is_derived'] else 'No'}</p>
         </div>
         """
-        
-        # Add derivation information if applicable
         if lineage['is_derived']:
             derivation = lineage['derivation']
             source_cols = [internal_to_friendly(src, self.registry) for src in derivation['sources']]
-            
             html += f"""
             <div style="margin-top: 15px; padding: 10px; background-color: #f0f8ff; border-radius: 4px;">
                 <h3>Derivation Information</h3>
@@ -1143,101 +1220,86 @@ class EnhancedLineageDialog(QDialog):
                 <p><strong>Created At:</strong> {derivation['created_at']}</p>
             </div>
             """
-        
-        # Add transformation history
         html += """
         <div style="margin-top: 15px;">
             <h3>Transformation History</h3>
             <table style="width: 100%; border-collapse: collapse;">
                 <tr style="background-color: #f2f2f2;">
-                    <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">#</th>
                     <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Transformation</th>
                     <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Timestamp</th>
                 </tr>
         """
-        
-        for i, entry in enumerate(lineage['history'], 1):
+        for entry in lineage['history']:
             html += f"""
                 <tr>
-                    <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">{i}</td>
                     <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">{entry['transformation']}</td>
                     <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">{entry['timestamp']}</td>
                 </tr>
             """
-        
         html += """
             </table>
         </div>
         """
-        
-        # Set the HTML content
         self.details_browser.setHtml(html)
     
     def changeView(self, index):
-        """Change the lineage visualization view based on selection"""
-        # This would modify the visualization based on the selected view
-        # For now, we'll just regenerate the default view
-        self.generateLineageGraph()
+        if index == 0:
+            self.generateLineageGraph(view_type="hierarchical")
+        elif index == 1:
+            self.generateLineageGraph(view_type="network")
+        elif index == 2:
+            if self.column_combo.currentIndex() > 0:
+                self.filterByColumn(self.column_combo.currentIndex())
+            else:
+                self.generateLineageGraph(view_type="column_focused")
     
     def filterByColumn(self, index):
-        """Filter the lineage visualization to focus on a specific column"""
-        # This would modify the visualization to highlight paths related to the selected column
-        # For now, we'll just regenerate the default view
-        self.generateLineageGraph()
+        if index == 0:
+            self.generateLineageGraph(view_type="hierarchical")
+        else:
+            friendly_name = self.column_combo.itemText(index)
+            col_id = None
+            for k, v in self.registry.items():
+                if internal_to_friendly(k, self.registry) == friendly_name:
+                    col_id = k
+                    break
+            if col_id is None:
+                return
+            self.generateLineageGraph(view_type="column_focused", focus_column=col_id)
     
     def showHelp(self):
-        """Show help information"""
         help_text = """
-        <h2>Enhanced Data Lineage Visualization</h2>
-        
-        <p>This tool visualizes the flow of data through your transformation pipeline, 
-        showing how columns are transformed and how data moves through the system.</p>
-        
-        <h3>Navigation</h3>
+        <h2>Data Lineage Visualization Help</h2>
+        <p>This tool visualizes the transformations applied to your data throughout the processing pipeline.</p>
+        <h3>Navigation:</h3>
         <ul>
-            <li><strong>Pan:</strong> Click and drag on empty space</li>
             <li><strong>Zoom:</strong> Use mouse wheel or pinch gesture</li>
+            <li><strong>Pan:</strong> Click and drag on empty space</li>
             <li><strong>Select Node:</strong> Click on any node to see details</li>
-            <li><strong>Hover:</strong> Hover over nodes to see basic information</li>
         </ul>
-        
-        <h3>Views</h3>
+        <h3>Views:</h3>
         <ul>
-            <li><strong>Hierarchical View:</strong> Shows transformations in sequence from top to bottom</li>
-            <li><strong>Network View:</strong> Shows relationships between transformations in a force-directed layout</li>
-            <li><strong>Column-Focused View:</strong> Highlights transformations affecting a specific column</li>
+            <li><strong>Hierarchical View:</strong> Shows transformations in processing order</li>
+            <li><strong>Network View:</strong> Shows relationships between columns</li>
+            <li><strong>Column-Focused View:</strong> Focuses on transformations for specific columns</li>
         </ul>
-        
-        <h3>Column Details</h3>
-        <p>The details panel shows information about the selected column, including:</p>
-        <ul>
-            <li>Transformation history</li>
-            <li>Derivation information (if applicable)</li>
-            <li>Relationships to other columns</li>
-        </ul>
+        <h3>Filtering:</h3>
+        <p>Use the "Filter by Column" dropdown to focus on transformations affecting a specific column.</p>
         """
-        
         help_dialog = QDialog(self)
         help_dialog.setWindowTitle("Lineage Visualization Help")
-        help_dialog.resize(600, 500)
-        
+        help_dialog.resize(600, 400)
         layout = QVBoxLayout(help_dialog)
-        
         help_browser = QTextBrowser()
         help_browser.setHtml(help_text)
         layout.addWidget(help_browser)
-        
         close_button = QPushButton("Close")
         close_button.clicked.connect(help_dialog.accept)
         layout.addWidget(close_button)
-        
         help_dialog.exec()
     
     def exportLineage(self):
-        """Export the lineage visualization"""
-        # This would implement export functionality
-        # For now, we'll just show a message
-        QToolTip.showText(self.mapToGlobal(QPoint(100, 100)), "Export functionality would be implemented here", self)
+        pass
 
 def show_enhanced_lineage_in_ui(config, registry):
     dlg = EnhancedLineageDialog(config, registry)

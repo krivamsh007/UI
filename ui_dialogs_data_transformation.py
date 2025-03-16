@@ -9,7 +9,7 @@
 # -----------------------------------------------------------------------------
 from PyQt6.QtCore import Qt 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox, 
+    QFormLayout,QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox, QAbstractItemView,
     QSpinBox, QLayout, QListWidget, QListWidgetItem, QPushButton, QHeaderView, QTableWidget,QTableWidgetItem
 )
 from ui_helpers import add_ok_cancel_buttons, create_combo_box, single_friendly_to_internal, internal_to_friendly
@@ -20,76 +20,77 @@ from help_system import get_help_section, HelpDialog
 class GenerateUniqueIDsDialog(QDialog):
     def __init__(self, friendly_columns, registry, init_params=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Configure Generate Unique IDs 🔑")
+        self.setWindowTitle("Configure Generate Unique IDs")
         self.friendly_columns = friendly_columns
         self.registry = registry
         self.init_params = init_params or {}
-        self.selected_columns = set()
         self.initUI()
-        
+    
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QVBoxLayout.SetMinimumSize)
-
-        # New Column Name
-        layout.addWidget(QLabel("Enter New Column Name:"))
+        form = QFormLayout()
+        
+        # New column name input:
         self.newcol_edit = QLineEdit()
         self.newcol_edit.setPlaceholderText("e.g., unique_id")
         if "new_column" in self.init_params:
             self.newcol_edit.setText(self.init_params["new_column"])
-        layout.addWidget(self.newcol_edit)
+        form.addRow("New Column Name:", self.newcol_edit)
         
-        # Method Selection
-        layout.addWidget(QLabel("Select ID Generation Method:"))
+        # Method selection:
         self.method_combo = QComboBox()
         self.method_combo.addItems(["Sequence", "UUID", "Hashkey"])
         if "method" in self.init_params:
-            idx = self.method_combo.findText(self.init_params["method"].capitalize())
+            method = self.init_params["method"].capitalize()
+            idx = self.method_combo.findText(method)
             if idx >= 0:
                 self.method_combo.setCurrentIndex(idx)
-        layout.addWidget(self.method_combo)
+        form.addRow("ID Generation Method:", self.method_combo)
         
-        # Hashkey: Select multiple columns
-        self.hash_columns_label = QLabel("Select Columns for Hash Key:")
-        self.hash_columns_label.setVisible(False)
-        layout.addWidget(self.hash_columns_label)
-        
+        # Hashkey column selection (only visible if Hashkey is chosen):
+        self.hash_label = QLabel("Select Columns for Hash Key:")
+        self.hash_label.setVisible(False)
+        form.addRow("", self.hash_label)
         self.hash_list = QListWidget()
-        self.hash_list.setSelectionMode(QListWidget.MultiSelection)
+        self.hash_list.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         for col in self.friendly_columns:
             self.hash_list.addItem(QListWidgetItem(col))
         self.hash_list.setVisible(False)
-        layout.addWidget(self.hash_list)
-        # Connect method change
-        self.method_combo.currentTextChanged.connect(self.onMethodChanged)
+        form.addRow("", self.hash_list)
+        
+        # Help text:
+        help_label = QLabel(
+            "From the drop down select sequance type Help: 'Sequence' assigns incremental numbers; 'UUID' uses a random unique identifier; "
+            "'Hashkey' creates a hash based on selected columns."
+        )
+        help_label.setWordWrap(True)
+        form.addRow("Info:", help_label)
+        
+        layout.addLayout(form)
         add_ok_cancel_buttons(self, layout)
+        self.method_combo.currentTextChanged.connect(self.onMethodChanged)
         self.setLayout(layout)
         self.adjustSize()
     
     def onMethodChanged(self, text):
-        """Show column selection only when Hashkey is selected."""
         if text.lower() == "hashkey":
-            self.hash_columns_label.setVisible(True)
+            self.hash_label.setVisible(True)
             self.hash_list.setVisible(True)
         else:
-            self.hash_columns_label.setVisible(False)
+            self.hash_label.setVisible(False)
             self.hash_list.setVisible(False)
     
     def getValues(self):
         values = {}
-        new_column = self.newcol_edit.text().strip()
-        if new_column:
-            values["new_column"] = new_column
-        method = self.method_combo.currentText().lower()
-        values["method"] = method
-        
-        if method == "hashkey":
+        new_col = self.newcol_edit.text().strip()
+        if new_col:
+            values["new_column"] = new_col
+        values["method"] = self.method_combo.currentText().lower()
+        if values["method"] == "hashkey":
             selected_friendly = [item.text() for item in self.hash_list.selectedItems()]
             internal_cols = [single_friendly_to_internal(f, self.registry) for f in selected_friendly if single_friendly_to_internal(f, self.registry)]
             values["columns"] = internal_cols
-        
         return values
-
 # -------------------- Convert Datatype Dialog --------------------
 class ConvertDatatypeDialog(QDialog):
     def __init__(self, friendly_columns, registry, init_params=None, parent=None):
@@ -103,12 +104,12 @@ class ConvertDatatypeDialog(QDialog):
     
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QVBoxLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
 
         # Column selection list
         layout.addWidget(QLabel("Select Columns to Convert:"))
         self.list_columns = QListWidget()
-        self.list_columns.setSelectionMode(QListWidget.MultiSelection)
+        self.list_columns.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.list_columns.addItems(self.friendly_columns)
         layout.addWidget(self.list_columns)
 
@@ -163,7 +164,7 @@ class ConvertDatatypeDialog(QDialog):
 
         # Column name (read-only)
         item_col = QTableWidgetItem(column_name)
-        item_col.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+        item_col.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
         self.table.setItem(row, 0, item_col)
 
         # Data type dropdown
@@ -220,7 +221,7 @@ class GenericTransformationDialog(QDialog):
     
     def initUI(self, multi_col_label):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         # Transformation order (optional)
         layout.addWidget(QLabel("Transformation Order (optional, integer):"))
         self.order_edit = QLineEdit()
@@ -270,13 +271,6 @@ class GenericTransformationDialog(QDialog):
 # -------------------- New Dialogs for Aggregations & Analytical Functions --------------------
 class GroupAggregateDialog(QDialog):
     def __init__(self, friendly_columns, registry, init_params=None, parent=None):
-        """
-        Dialog to configure group and aggregate transformations.
-        User provides:
-          - Group Columns: selected via a searchable drop-down.
-          - Aggregations: entered as JSON mapping target columns to aggregation functions.
-          - Optional new names mapping: entered as JSON.
-        """
         super().__init__(parent)
         self.setWindowTitle("Configure Group & Aggregate")
         self.friendly_columns = friendly_columns
@@ -287,9 +281,9 @@ class GroupAggregateDialog(QDialog):
     
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         
-        # Group Columns selection using a button (drop-down searchable)
+        # Group Columns selection using a searchable drop-down button
         group_layout = QHBoxLayout()
         group_layout.addWidget(QLabel("Group Columns:"))
         self.group_cols_display = QLineEdit()
@@ -300,10 +294,10 @@ class GroupAggregateDialog(QDialog):
         group_layout.addWidget(btn_select)
         layout.addLayout(group_layout)
         
-        # Table for aggregation rules
-        self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["Target Column", "Aggregation Function", "New Column Name"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # Table for aggregation rules – now 4 columns: Target Column, Aggregation Function, New Column Name, and Having Condition.
+        self.table = QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(["Target Column", "Aggregation Function", "New Column Name", "Having Condition"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table)
         
         # Buttons to add/remove rows
@@ -316,20 +310,27 @@ class GroupAggregateDialog(QDialog):
         btn_layout.addWidget(self.btn_remove)
         layout.addLayout(btn_layout)
         
+        # OK / Cancel buttons
         add_ok_cancel_buttons(self, layout)
         self.setLayout(layout)
         self.adjustSize()
         
+        # Load initial parameters if provided.
         if "group_columns" in self.init_params:
             self.selected_group_cols = self.init_params["group_columns"]
             friendly = [internal_to_friendly(col, self.registry) for col in self.selected_group_cols]
             self.group_cols_display.setText(", ".join(friendly))
         if "aggregations" in self.init_params:
-            self.loadInitialData(self.init_params.get("aggregations"), self.init_params.get("new_names", {}))
+            self.loadInitialData(self.init_params.get("aggregations"),
+                                 self.init_params.get("new_names", {}),
+                                 self.init_params.get("having", {}))
     
     def selectGroupColumns(self):
-        dlg = SearchableColumnListDialog(self.friendly_columns, title="Select Group Columns", multi_select=True, parent=self)
-        if dlg.exec_() == QDialog.Accepted:
+        dlg = SearchableColumnListDialog(self.friendly_columns,
+                                         title="Select Group Columns",
+                                         multi_select=True,
+                                         parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             selected = dlg.getSelectedColumns()
             self.selected_group_cols = [single_friendly_to_internal(col, self.registry) for col in selected]
             friendly = [internal_to_friendly(col, self.registry) for col in self.selected_group_cols]
@@ -338,16 +339,20 @@ class GroupAggregateDialog(QDialog):
     def addRow(self):
         row = self.table.rowCount()
         self.table.insertRow(row)
-        # Use a searchable drop-down for target column
+        # Target Column: searchable drop-down
         target_cb = create_combo_box(self.friendly_columns, editable=True)
         self.table.setCellWidget(row, 0, target_cb)
-        # Aggregation Function drop-down with common functions
+        # Aggregation Function drop-down – include common functions and "count_distinct"
         agg_cb = QComboBox()
-        agg_cb.addItems(["sum", "mean", "max", "min", "count", "median", "std", "var"])
+        agg_cb.addItems(["sum", "mean", "max", "min", "count", "count_distinct", "median", "std", "var"])
         self.table.setCellWidget(row, 1, agg_cb)
         # New Column Name: free text (optional)
         newcol_edit = QLineEdit()
         self.table.setCellWidget(row, 2, newcol_edit)
+        # Having Condition: free text (optional), e.g. "== 1" or "> 1"
+        having_edit = QLineEdit()
+        having_edit.setPlaceholderText("e.g. == 1 or > 1")
+        self.table.setCellWidget(row, 3, having_edit)
     
     def removeRow(self):
         selected = self.table.selectedRanges()
@@ -355,28 +360,67 @@ class GroupAggregateDialog(QDialog):
             row = selected[0].topRow()
             self.table.removeRow(row)
     
-    def loadInitialData(self, aggregations, new_names):
+    def loadInitialData(self, aggregations, new_names, having):
+        # aggregations: dictionary where keys are target columns and values are a function or list of functions.
+        # new_names: mapping from (target, func) to alias.
+        # having: mapping from (target, func) or aggregated alias to condition string.
         for target, funcs in aggregations.items():
-            # funcs can be a list or a single function
-            for func in (funcs if isinstance(funcs, list) else [funcs]):
+            if not isinstance(funcs, list):
+                funcs = [funcs]
+            for func in funcs:
                 self.addRow()
                 row = self.table.rowCount() - 1
                 self.table.cellWidget(row, 0).setCurrentText(internal_to_friendly(target, self.registry))
-                self.table.cellWidget(row, 1).setCurrentText(func)
+                self.table.cellWidget(row, 1).setCurrentText(str(func))
                 key = (target, func)
                 if key in new_names:
                     self.table.cellWidget(row, 2).setText(new_names[key])
+                if key in having:
+                    self.table.cellWidget(row, 3).setText(having[key])
+    def getValues(self):
+            values = {}
+            values["group_columns"] = self.selected_group_cols
+            aggregations = {}
+            new_names = {}
+            having = {}
+            for row in range(self.table.rowCount()):
+                friendly_target = self.table.cellWidget(row, 0).currentText().strip()
+                target = single_friendly_to_internal(friendly_target, self.registry)
+                agg = self.table.cellWidget(row, 1).currentText().strip()
+                newcol = self.table.cellWidget(row, 2).text().strip()
+                having_condition = self.table.cellWidget(row, 3).text().strip()
+                if target in aggregations:
+                    if isinstance(aggregations[target], list):
+                        aggregations[target].append(agg)
+                    else:
+                        aggregations[target] = [aggregations[target], agg]
+                else:
+                    aggregations[target] = agg
+                if newcol:
+                    new_names[(target, agg)] = newcol
+                if having_condition:
+                    alias = new_names.get((target, agg), f"{target}_{agg}")
+                    having[alias] = having_condition
+            values["aggregations"] = aggregations
+            if new_names:
+                values["new_names"] = new_names
+            if having:
+                values["having"] = having
+            return values
     
     def getValues(self):
         values = {}
         values["group_columns"] = self.selected_group_cols
         aggregations = {}
         new_names = {}
+        having = {}
         for row in range(self.table.rowCount()):
             friendly_target = self.table.cellWidget(row, 0).currentText().strip()
             target = single_friendly_to_internal(friendly_target, self.registry)
             agg = self.table.cellWidget(row, 1).currentText().strip()
             newcol = self.table.cellWidget(row, 2).text().strip()
+            having_condition = self.table.cellWidget(row, 3).text().strip()
+            # If target already exists, create a list; otherwise store a single value.
             if target in aggregations:
                 if isinstance(aggregations[target], list):
                     aggregations[target].append(agg)
@@ -386,11 +430,89 @@ class GroupAggregateDialog(QDialog):
                 aggregations[target] = agg
             if newcol:
                 new_names[(target, agg)] = newcol
+            if having_condition:
+                # Determine the alias for this aggregation rule.
+                alias = new_names.get((target, agg), f"{target}_{agg}")
+                having[alias] = having_condition
         values["aggregations"] = aggregations
         if new_names:
             values["new_names"] = new_names
+        if having:
+            values["having"] = having
         return values
+    
+class DetectOutliersDialog(QDialog):
 
+    def __init__(self, friendly_columns, registry, init_params=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Configure Detect Outliers")
+        self.friendly_columns = friendly_columns
+        self.registry = registry
+        self.init_params = init_params or {}
+        self.initUI()
+    
+    def initUI(self):
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        
+        # Column selection:
+        self.col_combo = create_combo_box(self.friendly_columns, editable=True)
+        if "column" in self.init_params:
+            friendly = internal_to_friendly(self.init_params["column"], self.registry)
+            if friendly in self.friendly_columns:
+                self.col_combo.setCurrentText(friendly)
+        form.addRow("Column to Analyze:", self.col_combo)
+        
+        # Outlier detection method:
+        self.method_combo = QComboBox()
+        self.method_combo.addItems(["Z-Score", "IQR", "MAD"])
+        if "method" in self.init_params:
+            method = self.init_params["method"].capitalize()
+            idx = self.method_combo.findText(method)
+            if idx >= 0:
+                self.method_combo.setCurrentIndex(idx)
+        form.addRow("Detection Method:", self.method_combo)
+        
+        # Threshold parameter:
+        self.threshold_edit = QLineEdit()
+        self.threshold_edit.setPlaceholderText("e.g., 3.0 (Z-Score), 1.5 (IQR), 3.0 (MAD)")
+        if "threshold" in self.init_params:
+            self.threshold_edit.setText(str(self.init_params["threshold"]))
+        form.addRow("Threshold:", self.threshold_edit)
+        
+        # New flag column name:
+        self.new_flag_edit = QLineEdit()
+        self.new_flag_edit.setPlaceholderText("e.g., outlier_flag")
+        if "new_flag" in self.init_params:
+            self.new_flag_edit.setText(self.init_params["new_flag"])
+        form.addRow("New Flag Column:", self.new_flag_edit)
+        
+        # Help information:
+        help_label = QLabel(
+            "Help: Z-Score is based on the mean and standard deviation; IQR uses the interquartile range; "
+            "MAD uses the median absolute deviation. Choose the method that best suits your data distribution."
+        )
+        help_label.setWordWrap(True)
+        form.addRow("Info:", help_label)
+        
+        layout.addLayout(form)
+        add_ok_cancel_buttons(self, layout)
+        self.setLayout(layout)
+        self.adjustSize()
+    
+    def getValues(self):
+        values = {}
+        friendly = self.col_combo.currentText().strip()
+        col_id = single_friendly_to_internal(friendly, self.registry)
+        if col_id:
+            values["column"] = col_id
+        values["method"] = self.method_combo.currentText().lower()
+        try:
+            values["threshold"] = float(self.threshold_edit.text().strip())
+        except:
+            values["threshold"] = 3.0  # default value
+        values["new_flag"] = self.new_flag_edit.text().strip() or f"{friendly}_outlier"
+        return values
 # -------------------- Analytical Functions Dialog --------------------
 class AnalyticalFunctionsDialog(QDialog):
     def __init__(self, friendly_columns, registry, init_params=None, parent=None):
@@ -405,7 +527,7 @@ class AnalyticalFunctionsDialog(QDialog):
     
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         
         # Group columns selection using a button
         group_layout = QHBoxLayout()
@@ -421,7 +543,7 @@ class AnalyticalFunctionsDialog(QDialog):
         # Table for analytical rules (4 columns: Target, Function, Parameters, New Column)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["Target Column", "Function", "Parameters", "New Column Name"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table)
         
         # Buttons to add/remove rows
@@ -447,7 +569,7 @@ class AnalyticalFunctionsDialog(QDialog):
     
     def selectGroupColumns(self):
         dlg = SearchableColumnListDialog(self.friendly_columns, title="Select Group Columns", multi_select=True, parent=self)
-        if dlg.exec_() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             selected = dlg.getSelectedColumns()
             self.selected_group_cols = [single_friendly_to_internal(col, self.registry) for col in selected]
             friendly = [internal_to_friendly(col, self.registry) for col in self.selected_group_cols]
@@ -524,6 +646,135 @@ class AnalyticalFunctionsDialog(QDialog):
             analytical[target][func] = params
         values["analytical"] = analytical
         return values
+
+class NormalizeDataDialog(QDialog):
+    def __init__(self, friendly_columns, registry, init_params=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Configure Normalize Data")
+        self.friendly_columns = friendly_columns
+        self.registry = registry
+        self.init_params = init_params or {}
+        self.initUI()
+    
+    def initUI(self):
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        
+        # Numeric column selection:
+        self.col_combo = create_combo_box(self.friendly_columns, editable=True)
+        if "column" in self.init_params:
+            friendly = internal_to_friendly(self.init_params["column"], self.registry)
+            if friendly in self.friendly_columns:
+                self.col_combo.setCurrentText(friendly)
+        form.addRow("Numeric Column:", self.col_combo)
+        
+        # Normalization method:
+        self.method_combo = QComboBox()
+        self.method_combo.addItems(["minmax", "zscore"])
+        if "norm_method" in self.init_params:
+            idx = self.method_combo.findText(self.init_params["norm_method"].lower())
+            if idx >= 0:
+                self.method_combo.setCurrentIndex(idx)
+        form.addRow("Normalization Method:", self.method_combo)
+        
+        # Help text:
+        help_label = QLabel(
+            "Help: 'minmax' scales values to the range 0-1; 'zscore' standardizes values based on the mean and standard deviation."
+        )
+        help_label.setWordWrap(True)
+        form.addRow("Info:", help_label)
+        
+        layout.addLayout(form)
+        add_ok_cancel_buttons(self, layout)
+        self.setLayout(layout)
+        self.adjustSize()
+    
+    def getValues(self):
+        values = {}
+        friendly = self.col_combo.currentText().strip()
+        col_id = single_friendly_to_internal(friendly, self.registry)
+        if col_id:
+            values["column"] = col_id
+        values["norm_method"] = self.method_combo.currentText().lower()
+        return values
+
+class DateFormatDialog(QDialog):
+    """
+    A configuration dialog for standardizing date formats.
+    Allows selection of the target date column, desired output format, timezone, and optional input formats.
+    """
+    def __init__(self, friendly_columns, registry, init_params=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Configure Standardize Date Format")
+        self.friendly_columns = friendly_columns
+        self.registry = registry
+        self.init_params = init_params or {}
+        self.initUI()
+    
+    def initUI(self):
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        
+        # Date column selection:
+        self.col_combo = create_combo_box(self.friendly_columns, editable=True)
+        if "column" in self.init_params:
+            friendly = internal_to_friendly(self.init_params["column"], self.registry)
+            if friendly in self.friendly_columns:
+                self.col_combo.setCurrentText(friendly)
+        form.addRow("Date Column:", self.col_combo)
+        
+        # Target date format:
+        self.format_edit = QLineEdit()
+        self.format_edit.setPlaceholderText("e.g., %Y-%m-%d")
+        if "date_format" in self.init_params:
+            self.format_edit.setText(self.init_params["date_format"])
+        form.addRow("Target Date Format:", self.format_edit)
+        
+        # Timezone (optional):
+        self.tz_edit = QLineEdit()
+        self.tz_edit.setPlaceholderText("e.g., UTC")
+        if "timezone" in self.init_params:
+            self.tz_edit.setText(self.init_params["timezone"])
+        form.addRow("Timezone (optional):", self.tz_edit)
+        
+        # Input formats (optional):
+        self.input_formats_edit = QLineEdit()
+        self.input_formats_edit.setPlaceholderText("e.g., %d/%m/%Y, %Y-%m-%d")
+        if "input_formats" in self.init_params:
+            if isinstance(self.init_params["input_formats"], list):
+                self.input_formats_edit.setText(", ".join(self.init_params["input_formats"]))
+            else:
+                self.input_formats_edit.setText(self.init_params["input_formats"])
+        form.addRow("Input Date Formats:", self.input_formats_edit)
+        
+        # Help text:
+        help_label = QLabel(
+            "Help: Specify the desired output format as a strftime string. "
+            "Optional input formats can be provided as alternatives (comma-separated) to help parse the date."
+        )
+        help_label.setWordWrap(True)
+        form.addRow("Info:", help_label)
+        
+        layout.addLayout(form)
+        add_ok_cancel_buttons(self, layout)
+        self.setLayout(layout)
+        self.adjustSize()
+    
+    def getValues(self):
+        values = {}
+        friendly = self.col_combo.currentText().strip()
+        col_id = single_friendly_to_internal(friendly, self.registry)
+        if col_id:
+            values["column"] = col_id
+        values["date_format"] = self.format_edit.text().strip() or "%Y-%m-%d"
+        tz = self.tz_edit.text().strip()
+        if tz:
+            values["timezone"] = tz
+        input_formats = self.input_formats_edit.text().strip()
+        if input_formats:
+            values["input_formats"] = [fmt.strip() for fmt in input_formats.split(",") if fmt.strip()]
+        return values
+
 class GenericTransformationDialog(QDialog):
     def __init__(self, friendly_columns, registry, init_params=None, param_defs=None,
                  dialog_title="Configure Transformation", multi_col_label="Select Column:", 
@@ -540,7 +791,7 @@ class GenericTransformationDialog(QDialog):
     
     def initUI(self, multi_col_label):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         # Transformation order (optional)
         layout.addWidget(QLabel("Transformation Order (optional, integer):"))
         self.order_edit = QLineEdit()
@@ -583,7 +834,7 @@ class GenericTransformationDialog(QDialog):
     def show_help(self):
         help_text = get_help_section(self.help_section)
         dlg = HelpDialog(help_text, parent=self)
-        dlg.exec_()
+        dlg.exec()
     
     def getValues(self):
         values = {}

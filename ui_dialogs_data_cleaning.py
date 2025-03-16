@@ -546,8 +546,6 @@ class RemoveDuplicatesDialog(QDialog):
         self.updateSelectedColumnsList()
 
     def loadPreviousSelections(self):
-        # If init_params contains previously selected columns (as internal names),
-        # convert them to friendly names and preselect them.
         if "columns_to_dedup" in self.init_params:
             preselected_internal = self.init_params["columns_to_dedup"]
             preselected_friendly = []

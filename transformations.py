@@ -12,8 +12,8 @@ import os, json, re, uuid, hashlib, logging, time
 from datetime import datetime, timedelta
 from functools import lru_cache
 from decimal import Decimal, InvalidOperation
-
 import pandas as pd
+from pandas import NamedAgg
 import numpy as np
 
 # Configure logging
@@ -501,19 +501,39 @@ def apply_transform_remove_duplicates(df, info):
     return df
 
 def apply_transform_detect_outliers(df, info):
-    col_name = info.get("column")
-    threshold = info.get("threshold", 3.0)
-    new_flag = info.get("new_flag")
-    if col_name and new_flag:
+    col = info.get("column")
+    method = info.get("method", "zscore").lower()
+    try:
+        threshold = float(info.get("threshold", 3.0))
+    except:
+        threshold = 3.0
+    new_flag = info.get("new_flag", f"{col}_outlier")
+    
+    if col and new_flag:
         try:
-            col_data = pd.to_numeric(df[col_name], errors='coerce')
-            mean = col_data.mean()
-            std = col_data.std()
-            df[new_flag] = ((col_data - mean).abs() > threshold * std)
+            series = pd.to_numeric(df[col], errors='coerce')
+            if method == "zscore":
+                mean = series.mean()
+                std = series.std()
+                df[new_flag] = ((series - mean).abs() > threshold * std)
+            elif method == "iqr":
+                Q1 = series.quantile(0.25)
+                Q3 = series.quantile(0.75)
+                IQR = Q3 - Q1
+                df[new_flag] = ((series < Q1 - threshold * IQR) | (series > Q3 + threshold * IQR))
+            elif method == "mad":
+                median = series.median()
+                mad = np.median(np.abs(series - median))
+                df[new_flag] = (np.abs(series - median) > threshold * mad)
+            else:
+                # Fallback to Z-score if method is unrecognized.
+                mean = series.mean()
+                std = series.std()
+                df[new_flag] = ((series - mean).abs() > threshold * std)
         except Exception as e:
-            logger.error("Detect Outliers error for column %s: %s", col_name, e)
+            print(f"Error in outlier detection: {e}")
     else:
-        logger.warning("Detect Outliers: missing 'column' or 'new_flag'.")
+        print("Detect Outliers: Missing required parameter 'column' or 'new_flag'.")
     return df
 
 def apply_transform_flag_missing(df, info):
@@ -567,6 +587,7 @@ def apply_transform_generate_unique_ids(df, info):
     else:
         logger.warning(f"Generate Unique IDs: Unknown method '{method}'.")
     return df
+
 def apply_transform_lag_column(df, info):
     col_name = info.get("column")
     periods = info.get("periods") or info.get("lag")
@@ -660,32 +681,60 @@ def apply_transform_transpose_data(df, info):
     return df
 
 def apply_transform_group_aggregate(df, info):
+
     group_cols = info.get("group_columns", [])
     aggregations = info.get("aggregations", {})
     new_names = info.get("new_names", {})
+    having = info.get("having", {})
+
     if not group_cols or not aggregations:
         logger.warning("Group & Aggregate: missing 'group_columns' or 'aggregations'.")
         return df
+
     try:
-        grouped = df.groupby(group_cols).agg(aggregations).reset_index()
+        agg_dict = {}
+        rename_map = {}  # single-level rename: "col_2_count" -> "NameCnt"
+
+        for col, agg_spec in aggregations.items():
+            if isinstance(agg_spec, list):
+                funcs = agg_spec
+            elif isinstance(agg_spec, dict):
+                funcs = list(agg_spec.keys())  # e.g. {"count": None, "mean": None}
+            else:
+                funcs = [agg_spec]
+
+            for func in funcs:
+                if isinstance(func, str) and func.lower() == "count_distinct":
+                    aggfunc = lambda x: x.nunique()
+                else:
+                    aggfunc = func
+                col_func = f"{col}_{func}"
+                agg_dict[col_func] = NamedAgg(column=col, aggfunc=aggfunc)
+                alias = new_names.get((col, func), col_func)
+                rename_map[col_func] = alias
+        grouped = df.groupby(group_cols, as_index=False).agg(**agg_dict)
         if isinstance(grouped.columns, pd.MultiIndex):
             new_cols = []
             for col_tuple in grouped.columns:
-                if col_tuple[0] in group_cols:
+                if col_tuple[0] in group_cols and len(col_tuple) == 2 and not col_tuple[1]:
                     new_cols.append(col_tuple[0])
                 else:
-                    new_name = new_names.get((col_tuple[0], col_tuple[1]), f"{col_tuple[0]}_{col_tuple[1]}")
-                    new_cols.append(new_name)
+                    if len(col_tuple) == 2 and col_tuple[0] in rename_map:
+                        new_cols.append(rename_map[col_tuple[0]])
+                    else:
+                        new_cols.append("_".join(x for x in col_tuple if x))
             grouped.columns = new_cols
         else:
-            for orig, new in new_names.items():
-                if isinstance(orig, tuple):
-                    col = f"{orig[0]}_{orig[1]}"
-                else:
-                    col = orig
-                if col in grouped.columns:
-                    grouped = grouped.rename(columns={col: new})
+            grouped = grouped.rename(columns=rename_map)
+        if having:
+            for alias_col, condition in having.items():
+                try:
+                    grouped = grouped.query(f"`{alias_col}` {condition}")
+                except Exception as e:
+                    logger.error("Error applying HAVING condition on %s: %s", alias_col, e)
+
         return grouped
+
     except Exception as e:
         logger.error("Group & Aggregate error: %s", e)
         return df
@@ -891,91 +940,124 @@ def apply_transform_convert_datatype(df, info):
     return df
 
 def apply_transform_standardize_date_format(df, info):
-    col_name = info.get("column")
+
+    col = info.get("column")
     fmt = info.get("date_format", "%Y-%m-%d")
     timezone = info.get("timezone", None)
     input_formats = info.get("input_formats", None)
-    if col_name and fmt:
+    
+    if col and fmt:
         try:
-            dt_series = pd.to_datetime(
-                df[col_name],
-                errors='coerce',
-                format=(input_formats[0] if input_formats else None)
-            )
-            if dt_series.isnull().all() and input_formats:
-                for f in input_formats:
-                    dt_series = pd.to_datetime(df[col_name], errors='coerce', format=f)
+            # Attempt parsing using provided input format (if any)
+            if input_formats:
+                if isinstance(input_formats, list):
+                    fmt_list = input_formats
+                else:
+                    fmt_list = [input_formats]
+                dt_series = None
+                for f in fmt_list:
+                    dt_series = pd.to_datetime(df[col], errors='coerce', format=f)
                     if not dt_series.isnull().all():
                         break
+                if dt_series is None or dt_series.isnull().all():
+                    dt_series = pd.to_datetime(df[col], errors='coerce')
+            else:
+                dt_series = pd.to_datetime(df[col], errors='coerce')
+                
             if timezone:
                 dt_series = dt_series.dt.tz_localize('UTC').dt.tz_convert(timezone)
-            df[col_name] = dt_series.dt.strftime(fmt)
+            df[col] = dt_series.dt.strftime(fmt)
         except Exception as e:
-            logger.error("Standardize Date Format error for column %s: %s", col_name, e)
-        return df
+            logger.error("Standardize Date Format error for column %s: %s", col, e)
     else:
         logger.warning("Standardize Date Format: missing required parameters.")
     return df
 
 def apply_transform_normalize_data(df, info):
-    col_name = info.get("column")
+    col = info.get("column")
     norm_method = info.get("norm_method", "minmax")
-    if col_name:
+    if col:
         try:
-            s = pd.to_numeric(df[col_name], errors='coerce')
-            df[col_name] = normalize_series(s, method=norm_method)
+            s = pd.to_numeric(df[col], errors='coerce')
+            df[col] = normalize_series(s, method=norm_method)
         except Exception as e:
-            logger.error("Normalize Data error for column %s: %s", col_name, e)
-        return df
+            logger.error("Normalize Data error for column %s: %s", col, e)
     else:
         logger.warning("Normalize Data: no column specified.")
     return df
 
-def apply_transform_extract_substrings(df, info):
-    col_name = info.get("column")
-    start = info.get("start", 0)
-    length = info.get("length", None)
-    end = info.get("end", None)
-    new_col = info.get("new_column")
-    if col_name and new_col:
-        s = df[col_name].astype(str)
-        if length is not None:
-            df[new_col] = s.str.slice(start, start + length)
+def apply_transform_substring(df, info):
+    col = info.get("column")
+    try:
+        start = int(info.get("start", 0))
+    except Exception as e:
+        logger.warning("Invalid start value, defaulting to 0: %s", e)
+        start = 0
+    num_chars = info.get("num_chars")
+    end = info.get("end")
+    new_col = info.get("new_column", f"{col}_substring")
+    
+    if col and new_col:
+        s = df[col].astype(str)
+        if num_chars is not None:
+            try:
+                num_chars = int(num_chars)
+                df[new_col] = s.str.slice(start, start + num_chars)
+            except Exception as e:
+                logger.error("Error with num_chars conversion: %s", e)
+                df[new_col] = s.str.slice(start)
         elif end is not None:
-            df[new_col] = s.str.slice(start, end)
+            try:
+                end = int(end)
+                df[new_col] = s.str.slice(start, end)
+            except Exception as e:
+                logger.error("Error with end conversion: %s", e)
+                df[new_col] = s.str.slice(start)
         else:
             df[new_col] = s.str.slice(start)
     else:
-        logger.warning("Extract Substrings: missing required parameters.")
+        logger.warning("Substring transformation missing required parameters.")
     return df
 
 def apply_transform_extract_text_between(df, info):
-    col_name = info.get("column")
+    col = info.get("column")
     left_delim = info.get("left_delim")
     right_delim = info.get("right_delim")
-    occurrence = info.get("occurrence", 1)
-    new_col = info.get("new_column")
-    if col_name and left_delim and right_delim and new_col:
+    try:
+        occurrence = int(info.get("occurrence", 1))
+    except Exception as e:
+        logger.warning("Invalid occurrence value, defaulting to 1: %s", e)
+        occurrence = 1
+    new_col = info.get("new_column", f"{col}_extracted")
+    
+    if col and left_delim and right_delim and new_col:
         pattern = re.escape(left_delim) + r'(.*?)' + re.escape(right_delim)
-        df[new_col] = df[col_name].astype(str).apply(
-            lambda x: re.search(pattern, x).group(1) if re.search(pattern, x) else ""
-        )
+        def extract_func(x):
+            matches = re.findall(pattern, str(x))
+            if matches and len(matches) >= occurrence:
+                return matches[occurrence-1]
+            return ""
+        df[new_col] = df[col].astype(str).apply(extract_func)
     else:
-        logger.warning("Extract Text Between: missing required parameters.")
+        logger.warning("Extract Text Between transformation missing required parameters.")
     return df
 
 def apply_transform_extract_numeric(df, info):
-    col_name = info.get("column")
-    new_col = info.get("new_column")
+    col = info.get("column")
+    new_col = info.get("new_column", f"{col}_numeric")
     preserve_decimal = info.get("preserve_decimal", False)
-    if col_name and new_col:
+    
+    if col and new_col:
         if preserve_decimal:
-            pattern = r'\d+\.\d+|\d+'
-            df[new_col] = df[col_name].astype(str).apply(lambda x: "".join(re.findall(pattern, x)))
+            # Matches decimals (e.g., 123.45) and integers.
+            pattern = r'(\d+\.\d+|\d+)'
         else:
-            df[new_col] = df[col_name].astype(str).apply(extract_numeric)
+            pattern = r'\d+'
+        def extract_func(x):
+            return "".join(re.findall(pattern, str(x)))
+        df[new_col] = df[col].astype(str).apply(extract_func)
     else:
-        logger.warning("Extract Numeric Values: missing required parameters.")
+        logger.warning("Extract Numeric Values transformation missing required parameters.")
     return df
 
 def apply_transform_round_numbers(df, info):
@@ -1241,7 +1323,7 @@ def apply_transformations(df, transformation_config):
     steps = [(info.get("sequence", 9999), key, info) for key, info in transformation_config.items()]
     steps.sort(key=lambda x: x[0])
     for sequence, key, info in steps:
-        logger.info("Applying transformation: %s (sequence %s)", key, sequence)
+        #logger.info("Applying transformation: %s (sequence %s)", key, sequence)
         if key == "Drop Columns":
             # Pass the full transformation configuration to check dependencies.
             df = apply_transform_drop_columns(df, info, transformation_config=transformation_config)
@@ -1290,7 +1372,7 @@ def apply_transformations(df, transformation_config):
         elif key == "Normalize Data":
             df = apply_transform_normalize_data(df, info)
         elif key == "Extract Substrings":
-            df = apply_transform_extract_substrings(df, info)
+            df = apply_transform_substring(df, info)
         elif key == "Extract Text Between":
             df = apply_transform_extract_text_between(df, info)
         elif key == "Extract Numeric Values":
@@ -1404,7 +1486,7 @@ def apply_transformations_with_summary(df, transformation_config):
     steps.sort(key=lambda x: x[0])
     for sequence, key, info in steps:
         init_count = len(df)
-        logger.info("Applying transformation: %s (sequence %s)", key, sequence)
+        #logger.info("Applying transformation: %s (sequence %s)", key, sequence)
         df = apply_transformations(df, {key: info})
         new_count = len(df)
         summary.append({
@@ -1525,13 +1607,71 @@ def generate_transformation_summary_html(summary_list, source_count, final_count
     
     return "\n".join(html_parts)
 
+def has_tuple_key(obj):
+    """
+    Recursively check if the object (dict or list) contains any tuple keys.
+    """
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if isinstance(k, tuple):
+                return True
+            if has_tuple_key(v):
+                return True
+        return False
+    elif isinstance(obj, list):
+        return any(has_tuple_key(item) for item in obj)
+    return False
+
+def convert_tuple_keys_to_str(obj):
+    """
+    Recursively convert dictionary keys that are tuples into strings by joining
+    the tuple elements with "::".
+    """
+    if isinstance(obj, dict):
+        new_obj = {}
+        for k, v in obj.items():
+            new_key = "::".join(str(x) for x in k) if isinstance(k, tuple) else k
+            new_obj[new_key] = convert_tuple_keys_to_str(v)
+        return new_obj
+    elif isinstance(obj, list):
+        return [convert_tuple_keys_to_str(item) for item in obj]
+    else:
+        return obj
+
 def save_pipeline_config(config, filepath):
+    print("Saving pipeline config to:", config)
+    serializable_config = convert_tuple_keys_to_str(config)
     with open(filepath, 'w') as f:
-        json.dump(config, f, indent=4)
+        json.dump(serializable_config, f, indent=4)
+
+def convert_str_keys_to_tuple(obj, sep="::"):
+    if isinstance(obj, dict):
+        new_obj = {}
+        for k, v in obj.items():
+            if isinstance(k, str) and sep in k:
+                new_key = tuple(k.split(sep))
+            else:
+                new_key = k
+            new_obj[new_key] = convert_str_keys_to_tuple(v, sep)
+        return new_obj
+    elif isinstance(obj, list):
+        return [convert_str_keys_to_tuple(item, sep) for item in obj]
+    else:
+        return obj
 
 def load_pipeline_config(filepath):
     with open(filepath, 'r') as f:
-        return json.load(f)
+        config = json.load(f)
+
+    if "Transformations" in config and "Group & Aggregate" in config["Transformations"]:
+        ga = config["Transformations"]["Group & Aggregate"]
+        if "new_names" in ga:
+            ga["new_names"] = convert_str_keys_to_tuple(ga["new_names"])
+    if "Transformations" in config and "Group & Aggregate" in config["Transformations"]:
+        ga = config["Transformations"]["Group & Aggregate"]
+        if "having" in ga:
+            ga["having"] = convert_str_keys_to_tuple(ga["having"])
+    return config
     
 def sql_like_to_regex(pattern):
     pattern = pattern.strip("'\"")
@@ -1594,9 +1734,8 @@ def parse_conditions(condition_str):
 
 def apply_filters(df, filter_conditions):
     if not filter_conditions:
-        logger.warning("No filters provided. Returning original DataFrame.")
+        #logger.warning("No filters provided. Returning original DataFrame.")
         return df
-
     group_results = []
 
     for group in filter_conditions:

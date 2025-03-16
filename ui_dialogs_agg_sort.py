@@ -7,7 +7,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # -----------------------------------------------------------------------------
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QButtonGroup, QRadioButton, QLayout
+from PyQt6.QtWidgets import QAbstractItemView,QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QButtonGroup, QRadioButton, QLayout
 from ui_helpers import add_ok_cancel_buttons, create_combo_box, single_friendly_to_internal, internal_to_friendly
 
 class GroupAggregateDialog(QDialog):
@@ -21,10 +21,10 @@ class GroupAggregateDialog(QDialog):
     def initUI(self):
         from PyQt6.QtWidgets import QListWidget
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         layout.addWidget(QLabel("Select Group Columns:"))
         self.group_list = QListWidget()
-        self.group_list.setSelectionMode(QListWidget.MultiSelection)
+        self.group_list.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         for col in self.friendly_columns:
             self.group_list.addItem(QListWidgetItem(col))
         layout.addWidget(self.group_list)
@@ -62,10 +62,10 @@ class SortDataDialog(QDialog):
     def initUI(self):
         from PyQt6.QtWidgets import QButtonGroup, QRadioButton, QListWidget, QListWidgetItem
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         layout.addWidget(QLabel("Select Columns to Sort:"))
         self.list_widget = QListWidget()
-        self.list_widget.setSelectionMode(QListWidget.MultiSelection)
+        self.list_widget.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         for col in self.friendly_columns:
             self.list_widget.addItem(QListWidgetItem(col))
         layout.addWidget(self.list_widget)

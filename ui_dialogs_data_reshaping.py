@@ -7,7 +7,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # -----------------------------------------------------------------------------
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox, QTableWidget, QTableWidgetItem, QLayout
+from PyQt6.QtWidgets import QAbstractItemView,QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox, QTableWidget, QTableWidgetItem, QLayout
 from ui_helpers import add_ok_cancel_buttons, create_combo_box, single_friendly_to_internal, internal_to_friendly
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QListWidget, QListWidgetItem
@@ -22,7 +22,7 @@ class SplitColumnDialog(QDialog):
     
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         layout.addWidget(QLabel("Select Column to Split:"))
         self.col_combo = create_combo_box(self.friendly_columns, editable=True)
         layout.addWidget(self.col_combo)
@@ -69,10 +69,10 @@ class ConcatenateColumnsDialog(QDialog):
         
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         layout.addWidget(QLabel("Select Columns to Concatenate:"))
         self.list_widget = QListWidget()
-        self.list_widget.setSelectionMode(QListWidget.MultiSelection)
+        self.list_widget.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         for col in self.friendly_columns:
             self.list_widget.addItem(QListWidgetItem(col))
         layout.addWidget(self.list_widget)
@@ -109,7 +109,7 @@ class PivotDataDialog(QDialog):
     
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         layout.addWidget(QLabel("Enter Index Columns (comma separated):"))
         self.index_edit = QLineEdit()
         layout.addWidget(self.index_edit)
@@ -152,7 +152,7 @@ class UnpivotDataDialog(QDialog):
     
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         layout.addWidget(QLabel("Enter ID Variables (comma separated):"))
         self.id_vars_edit = QLineEdit()
         layout.addWidget(self.id_vars_edit)
@@ -181,7 +181,7 @@ class TransposeDataDialog(QDialog):
     
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QLayout.SetMinimumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         layout.addWidget(QLabel("This operation will transpose the entire dataset. Continue?"))
         add_ok_cancel_buttons(self, layout)
         self.setLayout(layout)
