@@ -8,7 +8,7 @@
 # limitations under the License.
 # -----------------------------------------------------------------------------
 #!/usr/bin/env python
-import os, json, re, uuid, hashlib, logging, time
+import os, json, re, uuid, logging, time
 from datetime import datetime, timedelta
 from functools import lru_cache
 from decimal import Decimal, InvalidOperation
@@ -77,6 +77,7 @@ def convert_to_parquet(input_filepath, header=0, output_filepath=None):
     except Exception as e:
         logger.error("Conversion failed: %s", e)
         return input_filepath
+
 def apply_transform_unique(df, info):
     """Returns the unique values from a column in a new column (as an array)."""
     col = info.get("column")
@@ -331,7 +332,7 @@ def apply_transform_mid(df, info):
     if col:
         s = df[col].astype(str)
         if num_chars is not None:
-            df[new_col] = s.str.slice(start, start + num_chars)
+            df[new_col] = s.str.slice(start, start + int(num_chars))
         else:
             df[new_col] = s.str.slice(start)
     else:
@@ -421,7 +422,6 @@ def apply_transform_xlookup(df, info):
     return df
 
 def apply_transform_index_match(df, info):
-
     source_col = info.get("source_column")
     lookup_table = info.get("lookup_table")
     lookup_key = info.get("lookup_key")
@@ -437,9 +437,135 @@ def apply_transform_index_match(df, info):
     else:
         logger.warning("INDEX/MATCH: missing required parameters.")
     return df
+
+# =============================================================================
+# Enhanced Pivot and Unpivot Transformations
+# =============================================================================
+
+def apply_transform_pivot_data(df, info):
+    """
+    Enhanced Pivot Data Transformation.
+    
+    Expected keys in info:
+      - index: list of index column names.
+      - columns: list of pivot column names.
+      - value_settings: list of dictionaries, each with:
+           * value_column: column name to aggregate.
+           * aggfunc: aggregation function (e.g., "sum", "mean", "concatenate", etc.)
+             If "concatenate", additional keys may be provided:
+               - delimiter: string delimiter.
+               - distinct: Boolean to keep only unique values.
+               - order: "Ascending" or "Descending" (optional sort order).
+      - missing_fill: value to fill missing cells (optional).
+      - sort: dictionary with key "enabled" (bool) and "order" ("Ascending" or "Descending").
+      - computed_metric: a Python expression (as a string) that will be evaluated for each row 
+                         of the pivot result (optional).
+    
+    Returns a new DataFrame resulting from the pivot operation.
+    """
+    index = info.get("index")
+    pivot_cols = info.get("columns")
+    value_settings = info.get("value_settings", [])
+    fill_value = info.get("missing_fill", None)
+    if index and pivot_cols and value_settings:
+        pivot_results = []
+        for setting in value_settings:
+            value_column = setting.get("value_column")
+            aggfunc = setting.get("aggfunc", "sum")
+            if isinstance(aggfunc, str) and aggfunc.lower() == "concatenate":
+                delimiter = setting.get("delimiter", " ")
+                distinct = setting.get("distinct", False)
+                order = setting.get("order", None)
+                def concat_func(x):
+                    values = x.dropna().astype(str)
+                    if distinct:
+                        values = pd.Series(values.unique())
+                    if order and order.lower() in ["ascending", "asc"]:
+                        values = values.sort_values(ascending=True)
+                    elif order and order.lower() in ["descending", "desc"]:
+                        values = values.sort_values(ascending=False)
+                    return delimiter.join(values)
+                aggfunc_func = concat_func
+            else:
+                aggfunc_func = aggfunc
+            try:
+                pivot_df = pd.pivot_table(df, index=index, columns=pivot_cols, values=value_column,
+                                            aggfunc=aggfunc_func, fill_value=fill_value)
+                # Flatten multi-index columns if necessary.
+                if isinstance(pivot_df.columns, pd.MultiIndex):
+                    pivot_df.columns = [f"{value_column}_{'_'.join(map(str, col))}" for col in pivot_df.columns]
+                else:
+                    pivot_df.columns = [f"{value_column}_{col}" for col in pivot_df.columns]
+                pivot_df.reset_index(inplace=True)
+                pivot_results.append(pivot_df)
+            except Exception as e:
+                logger.error("Error in pivoting for value column %s: %s", value_column, e)
+        if pivot_results:
+            final_df = pivot_results[0]
+            for other in pivot_results[1:]:
+                final_df = pd.merge(final_df, other, on=index, how='outer')
+        else:
+            final_df = df
+        # Apply sorting if enabled.
+        sort_info = info.get("sort", {"enabled": False})
+        if sort_info.get("enabled", False):
+            sort_order = sort_info.get("order", "Ascending")
+            agg_columns = [col for col in final_df.columns if col not in index]
+            if agg_columns:
+                ascending = True if sort_order.lower() == "ascending" else False
+                final_df = final_df.sort_values(by=agg_columns[0], ascending=ascending)
+        # Compute additional metric if provided.
+        computed_metric = info.get("computed_metric", "").strip()
+        if computed_metric:
+            try:
+                final_df["computed_metric"] = final_df.apply(lambda row: eval(computed_metric, {}, row.to_dict()), axis=1)
+            except Exception as e:
+                logger.error("Error computing metric formula '%s': %s", computed_metric, e)
+        return final_df
+    else:
+        logger.warning("Pivot Data: missing required parameters (index, columns, or value_settings).")
+        return df
+
+def apply_transform_unpivot_data(df, info):
+    """
+    Enhanced Unpivot Data Transformation.
+    
+    Expected keys in info:
+      - id_vars: list of columns to keep fixed.
+      - value_vars: list of columns to unpivot.
+      - new_variable: name for the new variable column (default "variable").
+      - new_value: name for the new value column (default "value").
+      - dtype_conversion: desired data type for unpivoted values ("None", "String", "Integer", "Float").
+    
+    Returns the unpivoted DataFrame.
+    """
+    id_vars = info.get("id_vars", [])
+    value_vars = info.get("value_vars", [])
+    new_variable = info.get("new_variable", "variable")
+    new_value = info.get("new_value", "value")
+    dtype_conversion = info.get("dtype_conversion", "None")
+    if id_vars and value_vars:
+        try:
+            df_melt = pd.melt(df, id_vars=id_vars, value_vars=value_vars,
+                              var_name=new_variable, value_name=new_value)
+            if dtype_conversion.lower() == "string":
+                df_melt[new_value] = df_melt[new_value].astype(str)
+            elif dtype_conversion.lower() == "integer":
+                df_melt[new_value] = pd.to_numeric(df_melt[new_value], errors="coerce").astype("Int64")
+            elif dtype_conversion.lower() == "float":
+                df_melt[new_value] = pd.to_numeric(df_melt[new_value], errors="coerce")
+            return df_melt
+        except Exception as e:
+            logger.error("Unpivot Data error: %s", e)
+            return df
+    else:
+        logger.warning("Unpivot Data: missing required parameters (id_vars or value_vars).")
+        return df
+
 # =============================================================================
 # Existing Transformation Functions (unchanged, but now grouped by purpose)
 # =============================================================================
+
 def single_friendly_to_internal(friendly, registry):
     for internal, friendly_name in registry.items():
         if friendly_name == friendly:
@@ -526,7 +652,6 @@ def apply_transform_detect_outliers(df, info):
                 mad = np.median(np.abs(series - median))
                 df[new_flag] = (np.abs(series - median) > threshold * mad)
             else:
-                # Fallback to Z-score if method is unrecognized.
                 mean = series.mean()
                 std = series.std()
                 df[new_flag] = ((series - mean).abs() > threshold * std)
@@ -558,7 +683,6 @@ def apply_transform_flag_missing(df, info):
     return df
 
 def apply_transform_generate_unique_ids(df, info):
-
     new_col = info.get("new_column", "").strip()
     method = info.get("method", "sequence").strip().lower()
     if not new_col:
@@ -566,21 +690,17 @@ def apply_transform_generate_unique_ids(df, info):
         return df
     if method == "sequence":
         df[new_col] = np.arange(1, len(df) + 1)
-    
     elif method == "uuid":
         df[new_col] = [str(uuid.uuid4()) for _ in range(len(df))]
-    
     elif method == "hashkey":
         cols = info.get("columns", [])
         if not cols:
             logger.warning("Generate Unique IDs (hashkey): No columns specified.")
             return df
-
         missing_cols = [col for col in cols if col not in df.columns]
         if missing_cols:
             logger.warning(f"Generate Unique IDs (hashkey): Missing columns {missing_cols}")
             return df
-
         combined = df[cols].astype(str).agg('_'.join, axis=1)
         vectorized_hash = np.vectorize(lambda s: hashlib.sha256(s.encode('utf-8')).hexdigest())
         df[new_col] = vectorized_hash(combined)
@@ -643,35 +763,125 @@ def apply_transform_concatenate_columns(df, info):
     return df
 
 def apply_transform_pivot_data(df, info):
+    """
+    Enhanced Pivot Data Transformation.
+    
+    Expected keys in info:
+      - index: list of index column names.
+      - columns: list of pivot column names.
+      - value_settings: list of dictionaries, each with:
+           * value_column: column name to aggregate.
+           * aggfunc: aggregation function (e.g., "sum", "mean", "concatenate", etc.)
+             If "concatenate" is chosen, additional keys may be provided:
+               - delimiter: string delimiter (entered freely by the user).
+               - distinct: Boolean to keep only unique values.
+               - order: "Ascending" or "Descending" (optional sort order).
+      - missing_fill: value to fill missing cells (optional).
+      - sort: dictionary with key "enabled" (bool) and "order" ("Ascending" or "Descending").
+      - computed_metric: a Python expression (as a string) that will be evaluated for each row 
+                         of the pivot result (optional).
+    
+    Returns a new DataFrame resulting from the pivot operation.
+    """
     index = info.get("index")
-    columns = info.get("columns")
-    values = info.get("values")
-    aggfunc = info.get("aggfunc", "sum")
-    fill_value = info.get("fill_value", None)
-    if index and columns and values:
-        try:
-            df = df.pivot_table(
-                index=index, columns=columns, values=values,
-                aggfunc=aggfunc, fill_value=fill_value
-            ).reset_index()
-        except Exception as e:
-            logger.error("Pivot Data error: %s", e)
-        return df
+    pivot_cols = info.get("columns")
+    value_settings = info.get("value_settings", [])
+    fill_value = info.get("missing_fill", None)
+    if index and pivot_cols and value_settings:
+        pivot_results = []
+        for setting in value_settings:
+            value_column = setting.get("value_column")
+            aggfunc = setting.get("aggfunc", "sum")
+            if isinstance(aggfunc, str) and aggfunc.lower() == "concatenate":
+                delimiter = setting.get("delimiter", " ")
+                distinct = setting.get("distinct", False)
+                order = setting.get("order", None)
+                def concat_func(x):
+                    values = x.dropna().astype(str)
+                    if distinct:
+                        values = pd.Series(values.unique())
+                    if order and order.lower() in ["ascending", "asc"]:
+                        values = values.sort_values(ascending=True)
+                    elif order and order.lower() in ["descending", "desc"]:
+                        values = values.sort_values(ascending=False)
+                    return delimiter.join(values)
+                aggfunc_func = concat_func
+            else:
+                aggfunc_func = aggfunc
+            try:
+                pivot_df = pd.pivot_table(df, index=index, columns=pivot_cols, values=value_column,
+                                            aggfunc=aggfunc_func, fill_value=fill_value)
+                if isinstance(pivot_df.columns, pd.MultiIndex):
+                    pivot_df.columns = [f"{value_column}_{'_'.join(map(str, col))}" for col in pivot_df.columns]
+                else:
+                    pivot_df.columns = [f"{value_column}_{col}" for col in pivot_df.columns]
+                pivot_df.reset_index(inplace=True)
+                pivot_results.append(pivot_df)
+            except Exception as e:
+                logger.error("Error in pivoting for value column %s: %s", value_column, e)
+        if pivot_results:
+            final_df = pivot_results[0]
+            for other in pivot_results[1:]:
+                final_df = pd.merge(final_df, other, on=index, how='outer')
+        else:
+            final_df = df
+        sort_info = info.get("sort", {"enabled": False})
+        if sort_info.get("enabled", False):
+            sort_order = sort_info.get("order", "Ascending")
+            agg_columns = [col for col in final_df.columns if col not in index]
+            if agg_columns:
+                ascending = True if sort_order.lower() == "ascending" else False
+                final_df = final_df.sort_values(by=agg_columns[0], ascending=ascending)
+        computed_metric = info.get("computed_metric", "").strip()
+        if computed_metric:
+            try:
+                final_df["computed_metric"] = final_df.apply(lambda row: eval(computed_metric, {}, row.to_dict()), axis=1)
+            except Exception as e:
+                logger.error("Error computing metric formula '%s': %s", computed_metric, e)
+        return final_df
     else:
-        logger.warning("Pivot Data: missing required parameters.")
-    return df
+        logger.warning("Pivot Data: missing required parameters (index, columns, or value_settings).")
+        return df
 
 def apply_transform_unpivot_data(df, info):
+    """
+    Enhanced Unpivot Data Transformation.
+    
+    Expected keys in info:
+      - id_vars: list of columns to remain fixed.
+      - value_vars: list of columns to unpivot.
+      - new_variable: name for the new variable column (default "variable").
+      - new_value: name for the new value column (default "value").
+      - dtype_conversion: desired data type for unpivoted values ("None", "String", "Integer", "Float").
+    
+    Returns the unpivoted DataFrame.
+    """
     id_vars = info.get("id_vars", [])
     value_vars = info.get("value_vars", [])
+    new_variable = info.get("new_variable", "variable")
+    new_value = info.get("new_value", "value")
+    dtype_conversion = info.get("dtype_conversion", "None")
     if id_vars and value_vars:
         try:
-            df = pd.melt(df, id_vars=id_vars, value_vars=value_vars)
+            df_melt = pd.melt(df, id_vars=id_vars, value_vars=value_vars,
+                              var_name=new_variable, value_name=new_value)
+            if dtype_conversion.lower() == "string":
+                df_melt[new_value] = df_melt[new_value].astype(str)
+            elif dtype_conversion.lower() == "integer":
+                df_melt[new_value] = pd.to_numeric(df_melt[new_value], errors="coerce").astype("Int64")
+            elif dtype_conversion.lower() == "float":
+                df_melt[new_value] = pd.to_numeric(df_melt[new_value], errors="coerce")
+            return df_melt
         except Exception as e:
             logger.error("Unpivot Data error: %s", e)
+            return df
     else:
-        logger.warning("Unpivot Data: missing required parameters.")
-    return df
+        logger.warning("Unpivot Data: missing required parameters (id_vars or value_vars).")
+        return df
+
+# =============================================================================
+# Existing Transformation Functions (continued)
+# =============================================================================
 
 def apply_transform_transpose_data(df, info):
     try:
@@ -681,7 +891,6 @@ def apply_transform_transpose_data(df, info):
     return df
 
 def apply_transform_group_aggregate(df, info):
-
     group_cols = info.get("group_columns", [])
     aggregations = info.get("aggregations", {})
     new_names = info.get("new_names", {})
@@ -693,16 +902,14 @@ def apply_transform_group_aggregate(df, info):
 
     try:
         agg_dict = {}
-        rename_map = {}  # single-level rename: "col_2_count" -> "NameCnt"
-
+        rename_map = {}
         for col, agg_spec in aggregations.items():
             if isinstance(agg_spec, list):
                 funcs = agg_spec
             elif isinstance(agg_spec, dict):
-                funcs = list(agg_spec.keys())  # e.g. {"count": None, "mean": None}
+                funcs = list(agg_spec.keys())
             else:
                 funcs = [agg_spec]
-
             for func in funcs:
                 if isinstance(func, str) and func.lower() == "count_distinct":
                     aggfunc = lambda x: x.nunique()
@@ -732,9 +939,7 @@ def apply_transform_group_aggregate(df, info):
                     grouped = grouped.query(f"`{alias_col}` {condition}")
                 except Exception as e:
                     logger.error("Error applying HAVING condition on %s: %s", alias_col, e)
-
         return grouped
-
     except Exception as e:
         logger.error("Group & Aggregate error: %s", e)
         return df
@@ -757,11 +962,10 @@ def apply_transform_trim(df, info):
     if not columns_info:
         logger.warning("No columns provided for transformation.")
         return df
-
     for col, settings in columns_info.items():
         if col not in df.columns:
             logger.warning("Trim: Column '%s' not found in DataFrame.", col)
-            continue  # Skip missing columns
+            continue
         operations = settings.get("operations", [])
         custom_char = settings.get("custom_char", None)
         s = df[col].astype(str)
@@ -776,19 +980,17 @@ def apply_transform_trim(df, info):
             s = s.str.replace(r'[^\w\s]', '', regex=True)
         if "Remove Non-UTF Characters" in operations:
             s = s.str.replace(r'[^\x00-\x7F]+', '', regex=True)
-        # Apply transformations to the DataFrame
         df[col] = s
-
     return df
 
 def apply_transform_change_case(df, info):
-    columns = info.get("columns", {})  # Dictionary: {column_name: conversion_type}
+    columns = info.get("columns", {})
     if not columns:
         logger.warning("Change Case: No columns specified.")
         return df
     for col, conversion in columns.items():
         if col in df.columns:
-            s = df[col].astype(str)  # Ensure column is treated as string
+            s = df[col].astype(str)
             if conversion == "uppercase":
                 df[col] = s.str.upper()
             elif conversion == "lowercase":
@@ -808,17 +1010,14 @@ def apply_transform_replace_substring(df, info):
     if not columns_info:
         logger.warning("Replace Substring: No columns provided.")
         return df
-
     for col, settings in columns_info.items():
         old_sub = settings.get("old_sub")
         new_sub = settings.get("new_sub")
         case_sensitive = settings.get("case_sensitive", True)
         global_replace = settings.get("global", True)
-
         if col not in df.columns:
             logger.warning(f"Replace Substring: Column '{col}' not found in DataFrame. Skipping...")
             continue
-
         if old_sub is None or new_sub is None:
             logger.warning(f"Replace Substring: Missing parameters for column '{col}'. Skipping...")
             continue
@@ -828,7 +1027,6 @@ def apply_transform_replace_substring(df, info):
         else:
             df[col] = s.str.replace(old_sub, new_sub, flags=re.IGNORECASE, regex=True)
     return df
-
 
 def apply_transform_fill_missing(df, info):
     col = info.get("column")
@@ -854,7 +1052,6 @@ def apply_transform_fill_missing(df, info):
     return df
 
 def apply_transform_convert_datatype(df, info):
-
     columns_info = info.get("columns", {})
     if not columns_info:
         logger.warning("Convert Datatype: No columns provided for conversion.")
@@ -871,22 +1068,18 @@ def apply_transform_convert_datatype(df, info):
             continue
         try:
             if target in ["datetime", "date"]:
-                
                 df[col_name] = df[col_name].astype(str).str.strip("'\" ").replace({"": np.nan, "nan": np.nan})
-               
                 date_formats = ["%d-%m-%Y", "%m-%d-%Y", "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"]
                 def parse_date(value):
                     if pd.isna(value) or str(value).strip() == "":
-                        return pd.NaT  # Preserve NaN for missing values
-                   
+                        return pd.NaT
                     for fmt in date_formats:
                         try:
                             return pd.to_datetime(value, format=fmt)
                         except Exception:
                             continue
-                    return pd.NaT  # If all formats fail, return NaT
+                    return pd.NaT
                 df[col_name] = df[col_name].apply(parse_date)
-
                 if default_value:
                     try:
                         default_dt = pd.to_datetime(default_value, errors="coerce")
@@ -940,15 +1133,12 @@ def apply_transform_convert_datatype(df, info):
     return df
 
 def apply_transform_standardize_date_format(df, info):
-
     col = info.get("column")
     fmt = info.get("date_format", "%Y-%m-%d")
     timezone = info.get("timezone", None)
     input_formats = info.get("input_formats", None)
-    
     if col and fmt:
         try:
-            # Attempt parsing using provided input format (if any)
             if input_formats:
                 if isinstance(input_formats, list):
                     fmt_list = input_formats
@@ -963,7 +1153,6 @@ def apply_transform_standardize_date_format(df, info):
                     dt_series = pd.to_datetime(df[col], errors='coerce')
             else:
                 dt_series = pd.to_datetime(df[col], errors='coerce')
-                
             if timezone:
                 dt_series = dt_series.dt.tz_localize('UTC').dt.tz_convert(timezone)
             df[col] = dt_series.dt.strftime(fmt)
@@ -996,7 +1185,6 @@ def apply_transform_substring(df, info):
     num_chars = info.get("num_chars")
     end = info.get("end")
     new_col = info.get("new_column", f"{col}_substring")
-    
     if col and new_col:
         s = df[col].astype(str)
         if num_chars is not None:
@@ -1029,7 +1217,6 @@ def apply_transform_extract_text_between(df, info):
         logger.warning("Invalid occurrence value, defaulting to 1: %s", e)
         occurrence = 1
     new_col = info.get("new_column", f"{col}_extracted")
-    
     if col and left_delim and right_delim and new_col:
         pattern = re.escape(left_delim) + r'(.*?)' + re.escape(right_delim)
         def extract_func(x):
@@ -1046,10 +1233,8 @@ def apply_transform_extract_numeric(df, info):
     col = info.get("column")
     new_col = info.get("new_column", f"{col}_numeric")
     preserve_decimal = info.get("preserve_decimal", False)
-    
     if col and new_col:
         if preserve_decimal:
-            # Matches decimals (e.g., 123.45) and integers.
             pattern = r'(\d+\.\d+|\d+)'
         else:
             pattern = r'\d+'
@@ -1223,7 +1408,7 @@ def apply_transform_custom_function(df, info):
                 df = func(df)
             except Exception as e:
                 logger.error("Custom Function error: %s", e)
-        elif isinstance(func, str) and func in {}:  # CUSTOM_FUNCTIONS dictionary if you register functions
+        elif isinstance(func, str) and func in {}:
             try:
                 df = {}[func](df)
             except Exception as e:
@@ -1311,7 +1496,6 @@ def apply_transform_analytical_functions(df, info):
                 logger.error("Analytical function '%s' error for column %s: %s", func_name, target_col, e)
     return df
 
-
 # =============================================================================
 # Transformation Dispatcher Functions
 # =============================================================================
@@ -1323,9 +1507,7 @@ def apply_transformations(df, transformation_config):
     steps = [(info.get("sequence", 9999), key, info) for key, info in transformation_config.items()]
     steps.sort(key=lambda x: x[0])
     for sequence, key, info in steps:
-        #logger.info("Applying transformation: %s (sequence %s)", key, sequence)
         if key == "Drop Columns":
-            # Pass the full transformation configuration to check dependencies.
             df = apply_transform_drop_columns(df, info, transformation_config=transformation_config)
         elif key == "Drop Unnamed Columns":
             df = apply_transform_drop_unnamed_columns(df, info)
@@ -1401,7 +1583,6 @@ def apply_transformations(df, transformation_config):
             df = apply_transform_custom_function(df, info)
         elif key == "Analytical Functions":
             df = apply_transform_analytical_functions(df, info)
-        # New functions
         elif key == "Unique":
             df = apply_transform_unique(df, info)
         elif key == "Sort Array":
@@ -1452,7 +1633,6 @@ def apply_transformations(df, transformation_config):
             df = apply_transform_index_match(df, info)
         else:
             logger.warning("Unknown transformation key: %s. Skipping.", key)
-    # Handle renaming after all transformations
     rename_info = {}
     if "Rename Columns" in transformation_config:
         rename_info.update(transformation_config["Rename Columns"].get("new_names", {}))
@@ -1486,7 +1666,6 @@ def apply_transformations_with_summary(df, transformation_config):
     steps.sort(key=lambda x: x[0])
     for sequence, key, info in steps:
         init_count = len(df)
-        #logger.info("Applying transformation: %s (sequence %s)", key, sequence)
         df = apply_transformations(df, {key: info})
         new_count = len(df)
         summary.append({
@@ -1510,9 +1689,7 @@ def generate_transformation_summary_html(summary_list, source_count, final_count
     Builds an HTML-based transformation summary with a fancy, modern table style.
     Display this HTML in a QTextBrowser, QTextEdit, or QLabel that supports rich text.
     """
-    # Sort by 'sequence' so transformations appear in order
     sorted_steps = sorted(summary_list, key=lambda x: x.get("sequence", 9999))
-
     enumerated_steps = []
     for i, step in enumerate(sorted_steps, start=1):
         enumerated_steps.append({
@@ -1521,17 +1698,11 @@ def generate_transformation_summary_html(summary_list, source_count, final_count
             "initial_count": step.get("initial_count", ""),
             "new_count": step.get("new_count", "")
         })
-    
-    # Start building the HTML
     html_parts = []
-
-    # Title
     html_parts.append("""
     <div style="font-family: 'Segoe UI', Tahoma, Arial, sans-serif; margin: 10px;">
       <h2 style="color: #2F80ED; margin-bottom: 6px;">Transformation Summary</h2>
     """)
-    
-    # Stats about initial/final counts
     html_parts.append(f"""
       <p style="margin: 4px 0;">
         <strong>Initial row count:</strong> {source_count}
@@ -1563,15 +1734,12 @@ def generate_transformation_summary_html(summary_list, source_count, final_count
     """)
     row_bg1 = "#FAFAFA"
     row_bg2 = "#F0F4FF"
-    
     for idx, step in enumerate(enumerated_steps):
         row_bg = row_bg1 if (idx % 2 == 0) else row_bg2
-        
         seq_str = step["index"]
         trans_str = step["transformation"]
         before_val = step["initial_count"]
         after_val = step["new_count"]
-
         html_parts.append(f"""
           <tr style="
             background-color: {row_bg};
@@ -1594,23 +1762,15 @@ def generate_transformation_summary_html(summary_list, source_count, final_count
             </td>
           </tr>
         """)
-
-    # Close table and container
     html_parts.append("""
         </tbody>
       </table>
       </div>
     """)
-    
-    # Close outer div
     html_parts.append("</div>")
-    
     return "\n".join(html_parts)
 
 def has_tuple_key(obj):
-    """
-    Recursively check if the object (dict or list) contains any tuple keys.
-    """
     if isinstance(obj, dict):
         for k, v in obj.items():
             if isinstance(k, tuple):
@@ -1623,10 +1783,6 @@ def has_tuple_key(obj):
     return False
 
 def convert_tuple_keys_to_str(obj):
-    """
-    Recursively convert dictionary keys that are tuples into strings by joining
-    the tuple elements with "::".
-    """
     if isinstance(obj, dict):
         new_obj = {}
         for k, v in obj.items():
@@ -1637,6 +1793,14 @@ def convert_tuple_keys_to_str(obj):
         return [convert_tuple_keys_to_str(item) for item in obj]
     else:
         return obj
+
+PIPELINE_CONFIG = None
+
+def save_pipeline_config_to_variable(config):
+    global PIPELINE_CONFIG
+    PIPELINE_CONFIG = convert_tuple_keys_to_str(config)
+    print("Pipeline configuration saved to variable:", PIPELINE_CONFIG)
+    return PIPELINE_CONFIG
 
 def save_pipeline_config(config, filepath):
     print("Saving pipeline config to:", config)
@@ -1662,7 +1826,6 @@ def convert_str_keys_to_tuple(obj, sep="::"):
 def load_pipeline_config(filepath):
     with open(filepath, 'r') as f:
         config = json.load(f)
-
     if "Transformations" in config and "Group & Aggregate" in config["Transformations"]:
         ga = config["Transformations"]["Group & Aggregate"]
         if "new_names" in ga:
@@ -1672,7 +1835,7 @@ def load_pipeline_config(filepath):
         if "having" in ga:
             ga["having"] = convert_str_keys_to_tuple(ga["having"])
     return config
-    
+
 def sql_like_to_regex(pattern):
     pattern = pattern.strip("'\"")
     pattern = pattern.replace('%', '.*').replace('_', '.')
@@ -1734,29 +1897,23 @@ def parse_conditions(condition_str):
 
 def apply_filters(df, filter_conditions):
     if not filter_conditions:
-        #logger.warning("No filters provided. Returning original DataFrame.")
         return df
     group_results = []
-
     for group in filter_conditions:
         if (not isinstance(group, dict)
             or "conditions" not in group
             or "group_logic" not in group):
             logger.warning("Skipping invalid filter group: %s", group)
             continue
-
         group_logic = group.get("group_logic", "AND").upper()
         conditions = group.get("conditions", [])
-
         filtered_df = df.copy()
         condition_mask = None
         current_logic = None
-
         for condition in conditions:
             if isinstance(condition, str) and condition.upper() in ["AND", "OR"]:
                 current_logic = condition.upper()
                 continue
-
             if isinstance(condition, dict):
                 col = condition.get("col")
                 cond = condition.get("cond")
@@ -1769,13 +1926,10 @@ def apply_filters(df, filter_conditions):
             else:
                 logger.warning("Skipping invalid condition: %s", condition)
                 continue
-
             if col not in filtered_df.columns:
                 logger.warning("Filter skipped: column '%s' not found in DataFrame.", col)
                 continue
-
             condition_result = None
-
             if cond == "Equals" and val is not None:
                 condition_result = (filtered_df[col] == val)
             elif cond == "Not Equals" and val is not None:
@@ -1869,7 +2023,6 @@ def apply_filters(df, filter_conditions):
             else:
                 logger.warning("Unknown condition '%s' for column '%s'. Skipped.", cond, col)
                 continue
-
             if condition_result is not None:
                 if condition_mask is None:
                     condition_mask = condition_result
@@ -1880,15 +2033,11 @@ def apply_filters(df, filter_conditions):
                         condition_mask &= condition_result
                     elif current_logic == "OR":
                         condition_mask |= condition_result
-
         if condition_mask is not None:
             filtered_df = filtered_df[condition_mask]
-
         group_results.append((filtered_df, group_logic.upper()))
-
     if not group_results:
         return df
-
     final_df = group_results[0][0]
     for i in range(1, len(group_results)):
         grp_df, grp_logic = group_results[i]
@@ -1896,5 +2045,4 @@ def apply_filters(df, filter_conditions):
             final_df = pd.merge(final_df, grp_df, how="inner")
         elif grp_logic == "OR":
             final_df = pd.concat([final_df, grp_df]).drop_duplicates()
-
     return final_df

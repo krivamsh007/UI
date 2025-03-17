@@ -467,13 +467,12 @@ class DataTransformerTool(QMainWindow):
         self.tabs.addTab(excel_tab, "Excel Functions 📊")
         self.tabs.addTab(reshape_tab, "Data Reshaping 🔀")
         self.tabs.addTab(adv_trans_tab, "Advanced Transformations 🔀")
-        self.tabs.addTab(adv_ops_tab, "Advanced Options 🧩")
+
         self.buildCleaningTab(cleaning_tab)
         self.buildTransformationTab(transform_tab)
         self.buildExcelFunctionsTab(excel_tab)
         self.buildReshapingTab(reshape_tab)
         self.buildAdvancedTransTab(adv_trans_tab)
-        self.buildAdvancedOpsTab(adv_ops_tab)
         self.left_layout.addWidget(self.tabs)
         self.left_layout.addStretch()
 
@@ -1501,7 +1500,8 @@ class DataTransformerTool(QMainWindow):
         if not self.state["file_path"]:
             QMessageBox.warning(self, "No File", "Load a file first.")
             return
-        dlg = SplitColumnDialog(list(self.column_registry.values()), self.column_registry, self)
+        init_config = self.state["transformation_params"].get("Split Column", None)
+        dlg = SplitColumnDialog(list(self.column_registry.values()), self.column_registry, init_values=init_config, parent=self)
         dlg.setMinimumSize(600, 400)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             if self.pipeline_loaded:
@@ -1514,7 +1514,8 @@ class DataTransformerTool(QMainWindow):
         if not self.state["file_path"]:
             QMessageBox.warning(self, "No File", "Load a file first.")
             return
-        dlg = ConcatenateColumnsDialog(list(self.column_registry.values()), self.column_registry, self)
+        init_config = self.state["transformation_params"].get("Concatenate Columns", None)
+        dlg = ConcatenateColumnsDialog(list(self.column_registry.values()), self.column_registry, init_values=init_config, parent=self)
         dlg.setMinimumSize(600, 400)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             if self.pipeline_loaded:
@@ -1527,7 +1528,8 @@ class DataTransformerTool(QMainWindow):
         if not self.state["file_path"]:
             QMessageBox.warning(self, "No File", "Load a file first.")
             return
-        dlg = PivotDataDialog(list(self.column_registry.values()), self.column_registry, self)
+        init_config = self.state["transformation_params"].get("Pivot Data", None)
+        dlg = PivotDataDialog(list(self.column_registry.values()), self.column_registry, init_values=init_config, parent=self)
         dlg.setMinimumSize(600, 400)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             if self.pipeline_loaded:
@@ -1540,8 +1542,8 @@ class DataTransformerTool(QMainWindow):
         if not self.state["file_path"]:
             QMessageBox.warning(self, "No File", "Load a file first.")
             return
-        from ui_dialogs_data_reshaping import UnpivotDataDialog
-        dlg = UnpivotDataDialog(list(self.column_registry.values()), self.column_registry, self)
+        init_config = self.state["transformation_params"].get("Unpivot Data", None)
+        dlg = UnpivotDataDialog(list(self.column_registry.values()), self.column_registry, init_values=init_config, parent=self)
         dlg.setMinimumSize(600, 400)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             if self.pipeline_loaded:
@@ -1554,7 +1556,8 @@ class DataTransformerTool(QMainWindow):
         if not self.state["file_path"]:
             QMessageBox.warning(self, "No File", "Load a file first.")
             return
-        dlg = TransposeDataDialog(self)
+        init_config = self.state["transformation_params"].get("Transpose Data", None)
+        dlg = TransposeDataDialog(init_values=init_config, parent=self)
         dlg.setMinimumSize(600, 400)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             if self.pipeline_loaded:
@@ -1769,25 +1772,6 @@ class DataTransformerTool(QMainWindow):
             {"name": "columns", "label": "Columns (comma separated)", "type": "str"},
             {"name": "delimiter", "label": "Delimiter", "type": "str"}
         ])
-
-    # ------------------ Advanced Options (placeholders) ------------------
-    def configureAdvancedLookupConditional(self):
-        QMessageBox.information(self, "Advanced Lookup", "Advanced Lookup & Conditional configuration dialog goes here.")
-
-    def configureAdvancedDateTime(self):
-        QMessageBox.information(self, "Advanced Date/Time", "Advanced Date & Time configuration dialog goes here.")
-
-    def configureAdvancedTextOps(self):
-        QMessageBox.information(self, "Advanced Text Ops", "Advanced Text Operations configuration dialog goes here.")
-
-    def configureAdvancedFinancial(self):
-        QMessageBox.information(self, "Advanced Financial", "Advanced Financial Calculations configuration dialog goes here.")
-
-    def configureAdvancedDataValidation(self):
-        QMessageBox.information(self, "Advanced Data Validation", "Advanced Data Validation configuration dialog goes here.")
-
-    def configureAdvancedSQL(self):
-        QMessageBox.information(self, "Advanced SQL", "Advanced SQL Query configuration dialog goes here.")
 
     def openSimpleDialog(self, title, fields):
         dlg = GenericTransformationDialog(list(self.column_registry.values()), self.column_registry,
@@ -2077,7 +2061,6 @@ class DataTransformerTool(QMainWindow):
             {"name": "delimiter", "label": "Delimiter", "type": "str"}
         ])
 
-    # ------------------ Advanced Options (placeholders) ------------------
     def configureAdvancedLookupConditional(self):
         QMessageBox.information(self, "Advanced Lookup", "Advanced Lookup & Conditional configuration dialog goes here.")
 
