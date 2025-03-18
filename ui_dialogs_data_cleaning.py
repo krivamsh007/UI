@@ -696,7 +696,6 @@ class FlagMissingDialog(QDialog):
 
 class DropColumnsDialog(QDialog):
     def __init__(self, available_columns, registry, preselected_columns=None, parent=None):
-        print("DropColumnsDialog __init__ called with registry:", registry)
         super().__init__(parent)
         self.setWindowTitle("Drop Columns")
         self.setMinimumSize(600, 400)
