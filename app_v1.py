@@ -822,8 +822,7 @@ class DataTransformerTool(QMainWindow):
         if "having" in self.state.get("transformation_params", {}):
             friendly_config["having"] = convert_tuple_keys_to_str(
                 self.state["transformation_params"].get("having", {})
-        )   
-        print("Friendly config for lineage", friendly_config,self.master_registry)       
+        )        
         show_enhanced_lineage_in_ui(friendly_config, self.master_registry)
 
     def updatePreview(self, df):
@@ -838,9 +837,14 @@ class DataTransformerTool(QMainWindow):
                     delimiter = ","
                 return pd.read_csv(path, delimiter=delimiter, header=header)
             elif ext in [".xlsx", ".xls"]:
-                sheet_name, ok = QInputDialog.getText(self, "Select Sheet", "Enter sheet name (leave blank for first sheet):")
-                if not ok:
-                    sheet_name = 0
+                # Only ask for sheet name if not already set
+                if "sheet_name" not in self.state or self.state["sheet_name"] is None:
+                    sheet_name, ok = QInputDialog.getText(self, "Select Sheet", "Enter sheet name (leave blank for first sheet):")
+                    if not ok or sheet_name.strip() == "":
+                        sheet_name = 0
+                    self.state["sheet_name"] = sheet_name
+                else:
+                    sheet_name = self.state["sheet_name"]
                 return pd.read_excel(path, sheet_name=sheet_name, header=header)
             elif ext == ".parquet":
                 return pd.read_parquet(path)
@@ -874,7 +878,7 @@ class DataTransformerTool(QMainWindow):
                 new_cols.append(cid)
             df.columns = new_cols
             self.original_registry = self.master_registry.copy()
-            #print("New registry", self.original_registry)
+
             if self.state["filter_conditions"]:
                 for cond in self.state["filter_conditions"]:
                     if "column" in cond:
@@ -923,7 +927,7 @@ class DataTransformerTool(QMainWindow):
             }
         else:
             trans_config = self.state["transformation_params"].copy()
-            #print("Saving transformations",trans_config)
+
             if "Rename Columns" in trans_config:
                 friendly_mapping = trans_config["Rename Columns"]
                 new_mapping = {}
@@ -933,7 +937,7 @@ class DataTransformerTool(QMainWindow):
                         internal_key = friendly_name
                     new_mapping[internal_key] = new_name
                 trans_config["Rename Columns"] = new_mapping
-            print(trans_config)
+
             config = {
                 "Header Row": self.state["header_row"],
                 "Filters": self.state["filter_conditions"],
@@ -956,12 +960,27 @@ class DataTransformerTool(QMainWindow):
             return
         path, _ = QFileDialog.getOpenFileName(self, "Load Pipeline Config", "", "JSON Files (*.json)")
         if path:
-            try:  
+            try:
                 config = load_pipeline_config(path)
-                # Update state with saved header row and filters.
                 self.state["header_row"] = config.get("Header Row", 0)
+                self.spin_header.setValue(self.state["header_row"])
+
+                if self.state["file_path"]:
+                    df = self._readFile(self.state["file_path"], self.state["file_ext"], self.state["header_row"])
+                    self.friendly_columns = df.columns.tolist()
+                    self.master_registry.clear()
+                    self.column_registry.clear()
+                    new_cols = []
+                    for i, col in enumerate(self.friendly_columns):
+                        cid = f"col_{i+1}"
+                        self.master_registry[cid] = str(col)
+                        self.column_registry[cid] = str(col)
+                        new_cols.append(cid)
+                    df.columns = new_cols
+                    self.original_registry = self.master_registry.copy()
+                    self.state["original_df"] = df.copy()
+                
                 self.state["filter_conditions"] = config.get("Filters", [])
-                # Check if the saved config uses pipeline steps or direct transformation parameters.
                 if "Pipeline Steps" in config:
                     self.state["pipeline_steps"] = config.get("Pipeline Steps", [])
                     self.pipeline_loaded = True
@@ -969,8 +988,7 @@ class DataTransformerTool(QMainWindow):
                     self.state["transformation_params"] = config.get("Transformations", {})
                     self.pipeline_loaded = False
                 self.state["advanced_excel_config"] = config.get("Advanced Excel Functions", {})
-    
-                # Retrieve the saved column registry (mapping internal IDs to friendly names) from the pipeline config.
+                
                 saved_registry = config.get("Column Registry", {})
                 saved_friendly = set(saved_registry.values())
                 new_friendly = set(self.master_registry.values())
@@ -982,20 +1000,20 @@ class DataTransformerTool(QMainWindow):
                         f"The loaded pipeline references column(s) {', '.join(missing_columns)} that are not present in the current file.\n"
                         "Please check your file or update the pipeline accordingly."
                     )
-                self.spin_header.setValue(self.state["header_row"])
+                
                 if "Rename Columns" in self.state["transformation_params"]:
                     rename_info = self.state["transformation_params"]["Rename Columns"]
                     internal_mapping = rename_info.get("internal", {})
                     for cid, new_name in internal_mapping.items():
                         if cid in self.master_registry:
                             self.master_registry[cid] = new_name
+                
                 self.state["loaded_config"] = True
-                if self.state["original_df"] is not None:
-                    self.applyAllTransformationsAndRefresh()
+                self.applyAllTransformationsAndRefresh()
                 QMessageBox.information(self, "Success", "Pipeline loaded successfully.")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error loading pipeline:\n{str(e)}")
-
+    
     def applyAllTransformationsAndRefresh(self):
         if self.state["original_df"] is None:
             self.updatePreview(pd.DataFrame())
@@ -1215,7 +1233,6 @@ class DataTransformerTool(QMainWindow):
                      }
                 if self.pipeline_loaded:
                     self.addPipelineStep("Rename Columns", rename_step)
-                    print("Renaming columns:", rename_step)
                 else:
                     self.state["transformation_params"]["Rename Columns"] = rename_step  
                 self.applyAllTransformationsAndRefresh()
@@ -1786,6 +1803,8 @@ class DataTransformerTool(QMainWindow):
             self.applyAllTransformationsAndRefresh()
 
     def loadDataFile(self):
+        self.spin_header.setValue(0)
+        self.state["header_row"] = 0
         dlg = QFileDialog(self, "Select Data File")
         dlg.setNameFilters([
             "CSV Files (*.csv)",
@@ -1819,30 +1838,35 @@ class DataTransformerTool(QMainWindow):
                         delimiter = ","
                     df = pd.read_csv(path, delimiter=delimiter, header=self.spin_header.value())
                 elif self.state["file_ext"] in [".xlsx", ".xls"]:
-                    # Get the list of sheets in the Excel file
-                    excel_file = pd.ExcelFile(path)
-                    sheet_names = excel_file.sheet_names
-                    
-                    # Create a dialog with a dropdown to select the sheet
-                    sheet_dialog = QDialog(self)
-                    sheet_dialog.setWindowTitle("Select Sheet")
-                    layout = QVBoxLayout(sheet_dialog)
-                    sheet_label = QLabel("Select a sheet to load:")
-                    layout.addWidget(sheet_label)
-                    sheet_combo = QComboBox()
-                    sheet_combo.addItems(sheet_names)
-                    layout.addWidget(sheet_combo)
-                    button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-                    button_box.accepted.connect(sheet_dialog.accept)
-                    button_box.rejected.connect(sheet_dialog.reject)
-                    layout.addWidget(button_box)
-                    sheet_dialog.setLayout(layout)
-                    
-                    if sheet_dialog.exec() == QDialog.DialogCode.Accepted:
-                        selected_sheet = sheet_combo.currentText()
-                        df = pd.read_excel(path, sheet_name=selected_sheet, header=self.spin_header.value())
+                    # Only ask for sheet selection if not already set
+                    if "sheet_name" not in self.state:
+                        # Get the list of sheets in the Excel file
+                        excel_file = pd.ExcelFile(path)
+                        sheet_names = excel_file.sheet_names
+    
+                        # Create a dialog with a dropdown to select the sheet
+                        sheet_dialog = QDialog(self)
+                        sheet_dialog.setWindowTitle("Select Sheet")
+                        layout = QVBoxLayout(sheet_dialog)
+                        sheet_label = QLabel("Select a sheet to load:")
+                        layout.addWidget(sheet_label)
+                        sheet_combo = QComboBox()
+                        sheet_combo.addItems(sheet_names)
+                        layout.addWidget(sheet_combo)
+                        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+                        button_box.accepted.connect(sheet_dialog.accept)
+                        button_box.rejected.connect(sheet_dialog.reject)
+                        layout.addWidget(button_box)
+                        sheet_dialog.setLayout(layout)
+    
+                        if sheet_dialog.exec() == QDialog.DialogCode.Accepted:
+                            selected_sheet = sheet_combo.currentText()
+                            self.state["sheet_name"] = selected_sheet  # Save sheet name for later use
+                        else:
+                            return  # User canceled the sheet selection
                     else:
-                        return  # User canceled the sheet selection
+                        selected_sheet = self.state["sheet_name"]
+                    df = pd.read_excel(path, sheet_name=selected_sheet, header=self.spin_header.value())
                 elif self.state["file_ext"] == ".parquet":
                     df = pd.read_parquet(path)
                 elif self.state["file_ext"] == ".json":
@@ -1851,7 +1875,7 @@ class DataTransformerTool(QMainWindow):
                     df = pd.read_xml(path)
                 else:
                     df = pd.read_csv(path, header=self.spin_header.value())
-                
+    
                 self.friendly_columns = df.columns.tolist()
                 self.master_registry.clear()
                 self.column_registry.clear()
@@ -1863,9 +1887,8 @@ class DataTransformerTool(QMainWindow):
                     new_cols.append(cid)
                 df.columns = new_cols
                 self.original_registry = self.master_registry.copy()
-                #print("New registry", self.original_registry)
                 self.state["original_df"] = df.copy()
-                if not self.state["loaded_config"]:
+                if not self.state.get("loaded_config"):
                     self.state["filter_conditions"] = []
                     self.state["transformation_params"] = {}
                     self.state["advanced_excel_config"] = {}
@@ -1875,7 +1898,7 @@ class DataTransformerTool(QMainWindow):
                 QMessageBox.information(self, "Success", "Data file loaded successfully.")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not read file:\n{str(e)}")
-
+            
     def applyAllTransformationsAndRefresh(self):
         if self.state["original_df"] is None:
             self.updatePreview(pd.DataFrame())
@@ -2103,7 +2126,6 @@ class DataTransformerTool(QMainWindow):
             df = self.state["df"]
             friendly_df = df.copy()
             friendly_df.columns = [internal_to_friendly(col, self.master_registry) for col in friendly_df.columns]
-            print("Saving file with columns:", friendly_df.columns.tolist())
             try:
                 if selected_filter.startswith("CSV"):
                     friendly_df.to_csv(filename, index=False)

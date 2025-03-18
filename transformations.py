@@ -573,7 +573,6 @@ def single_friendly_to_internal(friendly, registry):
     return None 
 
 def apply_transform_drop_columns(df, info, transformation_config=None):
-    print("Applying Drop Columns transformation...", info)
     friendly_cols_to_drop = info.get("columns_to_drop", [])
     registry = info.get("registry", {})
     internal_cols_to_drop = [single_friendly_to_internal(friendly, registry) for friendly in friendly_cols_to_drop]
@@ -1799,11 +1798,9 @@ PIPELINE_CONFIG = None
 def save_pipeline_config_to_variable(config):
     global PIPELINE_CONFIG
     PIPELINE_CONFIG = convert_tuple_keys_to_str(config)
-    print("Pipeline configuration saved to variable:", PIPELINE_CONFIG)
     return PIPELINE_CONFIG
 
 def save_pipeline_config(config, filepath):
-    print("Saving pipeline config to:", config)
     serializable_config = convert_tuple_keys_to_str(config)
     with open(filepath, 'w') as f:
         json.dump(serializable_config, f, indent=4)
