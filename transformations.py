@@ -2043,3 +2043,27 @@ def apply_filters(df, filter_conditions):
         elif grp_logic == "OR":
             final_df = pd.concat([final_df, grp_df]).drop_duplicates()
     return final_df
+
+def normalize_json(json_data):
+    try:
+        if isinstance(json_data, str):
+            with open(json_data, 'r', encoding='utf-8') as f:
+                json_data = json.load(f)
+        if isinstance(json_data, dict):
+            json_data = [json_data]
+        df = pd.json_normalize(json_data, sep='_')
+
+        for col in df.columns:
+            if df[col].apply(lambda x: isinstance(x, list)).any():
+                df = df.explode(col).reset_index(drop=True)
+
+        for col in df.select_dtypes(include=['object']).columns:
+            if df[col].apply(lambda x: isinstance(x, dict)).any():
+                nested_df = pd.json_normalize(df[col], sep='_')
+
+                nested_df.columns = [f"{col}_{subcol}" for subcol in nested_df.columns]
+                df = df.join(nested_df).drop(columns=[col])
+        return df
+    except Exception as e:
+        print(f"Error processing JSON: {e}")
+        return None

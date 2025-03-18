@@ -849,7 +849,7 @@ class DataTransformerTool(QMainWindow):
             elif ext == ".parquet":
                 return pd.read_parquet(path)
             elif ext == ".json":
-                return pd.read_json(path)
+                return normalize_json(path)
             elif ext == ".xml":
                 return pd.read_xml(path)
             else:
@@ -1843,8 +1843,6 @@ class DataTransformerTool(QMainWindow):
                         # Get the list of sheets in the Excel file
                         excel_file = pd.ExcelFile(path)
                         sheet_names = excel_file.sheet_names
-    
-                        # Create a dialog with a dropdown to select the sheet
                         sheet_dialog = QDialog(self)
                         sheet_dialog.setWindowTitle("Select Sheet")
                         layout = QVBoxLayout(sheet_dialog)
@@ -1870,7 +1868,7 @@ class DataTransformerTool(QMainWindow):
                 elif self.state["file_ext"] == ".parquet":
                     df = pd.read_parquet(path)
                 elif self.state["file_ext"] == ".json":
-                    df = pd.read_json(path)
+                    df = normalize_json(path)
                 elif self.state["file_ext"] == ".xml":
                     df = pd.read_xml(path)
                 else:
@@ -2119,25 +2117,36 @@ class DataTransformerTool(QMainWindow):
         if self.state["df"] is None:
             QMessageBox.warning(self, "No Data", "No data available for download.")
             return
+    
+        # File selection dialog with Parquet as an option
         filename, selected_filter = QFileDialog.getSaveFileName(
-            self, "Save Data", "", "CSV Files (*.csv);;Text Files (*.txt);;Excel Files (*.xlsx)"
+            self, "Save Data", "",
+            "CSV Files (*.csv);;Text Files (*.txt);;Excel Files (*.xlsx);;Parquet Files (*.parquet)"
         )
+    
         if filename:
             df = self.state["df"]
             friendly_df = df.copy()
             friendly_df.columns = [internal_to_friendly(col, self.master_registry) for col in friendly_df.columns]
+    
             try:
                 if selected_filter.startswith("CSV"):
                     friendly_df.to_csv(filename, index=False)
                 elif selected_filter.startswith("Text"):
-                    delimiter, ok = QInputDialog.getText(self, "Specify Delimiter", "Enter delimiter for text file:", text="\t")
+                    delimiter, ok = QInputDialog.getText(
+                        self, "Specify Delimiter", "Enter delimiter for text file:", text="\t"
+                    )
                     if ok:
                         friendly_df.to_csv(filename, sep=delimiter, index=False)
                     else:
                         friendly_df.to_csv(filename, sep="\t", index=False)
                 elif selected_filter.startswith("Excel"):
                     friendly_df.to_excel(filename, index=False)
+                elif selected_filter.startswith("Parquet"):
+                    friendly_df.to_parquet(filename, index=False, engine="fastparquet")
+    
                 QMessageBox.information(self, "Success", "Data downloaded successfully.")
+            
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to download data: {str(e)}")
 
